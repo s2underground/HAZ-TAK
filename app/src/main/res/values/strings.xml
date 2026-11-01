@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HAZ-TAK</string>
+    <string name="app_desc">Hazardous materials initial response from the 2024 Emergency Response Guidebook (ERG2024): look up a material by ID number, name or placard, read its guide word for word, and draw the ERG initial isolation and protective action zones on the map for the whole team. Fully offline.</string>
+</resources>
