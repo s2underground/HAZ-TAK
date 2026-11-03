@@ -22,7 +22,7 @@ import java.util.Set;
 public final class Erg {
 
     /** Highest dataset format this build reads. */
-    public static final int FORMAT = 1;
+    public static final int FORMAT = 2;
 
     public final String edition;
     public final String sourceTitle;
@@ -37,7 +37,7 @@ public final class Erg {
     public final List<Placard> placards;
     public final List<String> placardIntro;
     public final Map<String, Rule> rules;
-    public final Map<String, List<RefPage>> reference;
+    public final Map<String, RefPage> reference;
 
     private final Map<String, List<Entry>> byId = new LinkedHashMap<>();
     private final Map<String, List<T1Row>> t1ById = new LinkedHashMap<>();
@@ -379,14 +379,128 @@ public final class Erg {
         }
     }
 
+    /**
+     * A reference page, structured by hand from the guidebook (every text
+     * checked verbatim against its pages when the dataset is built).
+     */
     public static final class RefPage {
-        public final int page;
-        public final List<String> paras;
+        public final String key;
+        public final String title;
+        public final List<Integer> pages;
+        public final List<RefBlock> blocks;
+        /** Citation as printed ("p. 388 and inside back cover"); may be empty. */
+        public final String cite;
 
-        RefPage(int page, List<String> paras) {
-            this.page = page;
-            this.paras = Collections.unmodifiableList(paras);
+        RefPage(String key, String title, List<Integer> pages,
+                List<RefBlock> blocks, String cite) {
+            this.key = key;
+            this.title = title;
+            this.cite = cite;
+            this.pages = Collections.unmodifiableList(pages);
+            this.blocks = Collections.unmodifiableList(blocks);
         }
+
+        /** "p. 1" or "pp. 280-282". */
+        public String pagesLabel() {
+            if (!cite.isEmpty())
+                return cite;
+            if (pages.isEmpty())
+                return "";
+            int a = pages.get(0), b = pages.get(pages.size() - 1);
+            if (a == b)
+                return "p. " + a;
+            return "pp. " + Math.min(a, b) + "-" + Math.max(a, b);
+        }
+    }
+
+    /** A coloured box of the flowchart; {@code then} is the box below it. */
+    public static final class RefBox {
+        public final String color;
+        public final String text;
+        public final RefBox then;
+
+        RefBox(String color, String text, RefBox then) {
+            this.color = color;
+            this.text = text;
+            this.then = then;
+        }
+
+        static RefBox of(JSONObject o) throws JSONException {
+            if (o == null)
+                return null;
+            return new RefBox(o.optString("color", "white"), o.getString("x"),
+                    of(o.optJSONObject("then")));
+        }
+    }
+
+    /**
+     * One block of a reference page. {@code type}: h, h2, p, b, b2, num, warn,
+     * note, box, q (flowchart question), table, phone, figure, link.
+     */
+    public static final class RefBlock {
+        public final String type;
+        public final String text; // x
+        public final String number; // n
+        public final String color;
+        public final String label; // plugin wording
+        public final String action; // plugin action
+        public final String question;
+        public final boolean dark;
+        public final List<RefBox> yes;
+        public final RefBox no;
+        public final List<String> cols;
+        public final List<List<String>> rows;
+        public final int phoneCol;
+        public final String name;
+        public final List<String> lines;
+        public final String kind;
+        public final List<String> labels;
+
+        RefBlock(JSONObject o) throws JSONException {
+            type = o.getString("t");
+            text = o.optString("x", "");
+            number = o.optString("n", "");
+            color = o.optString("color", "");
+            label = o.optString("label", "");
+            action = o.optString("action", "");
+            question = o.optString("q", "");
+            dark = o.optBoolean("dark", false);
+            List<RefBox> y = new ArrayList<>();
+            JSONArray ya = o.optJSONArray("yes");
+            if (ya != null)
+                for (int i = 0; i < ya.length(); i++)
+                    y.add(RefBox.of(ya.getJSONObject(i)));
+            yes = Collections.unmodifiableList(y);
+            no = RefBox.of(o.optJSONObject("no"));
+            cols = strings(o.optJSONArray("cols"));
+            List<List<String>> r = new ArrayList<>();
+            JSONArray ra = o.optJSONArray("rows");
+            if (ra != null)
+                for (int i = 0; i < ra.length(); i++)
+                    r.add(strings(ra.getJSONArray(i)));
+            rows = Collections.unmodifiableList(r);
+            phoneCol = o.optInt("phones", -1);
+            name = o.optString("name", "");
+            lines = strings(o.optJSONArray("lines"));
+            kind = o.optString("kind", "");
+            labels = strings(o.optJSONArray("labels"));
+        }
+
+        /** The verified label of a figure, or the fallback if absent. */
+        public String figureLabel(String wanted) {
+            for (String l : labels)
+                if (l.equals(wanted))
+                    return l;
+            return wanted;
+        }
+    }
+
+    private static List<String> strings(JSONArray a) throws JSONException {
+        List<String> l = new ArrayList<>();
+        if (a != null)
+            for (int i = 0; i < a.length(); i++)
+                l.add(a.getString(i));
+        return Collections.unmodifiableList(l);
     }
 
     // ------------------------------------------------------------------
@@ -529,21 +643,21 @@ public final class Erg {
         }
         rules = Collections.unmodifiableMap(rl);
 
-        Map<String, List<RefPage>> ref = new LinkedHashMap<>();
+        Map<String, RefPage> ref = new LinkedHashMap<>();
         JSONObject rf = o.getJSONObject("reference");
         for (java.util.Iterator<String> it = rf.keys(); it.hasNext();) {
             String k = it.next();
-            JSONArray pages = rf.getJSONArray(k);
-            List<RefPage> list = new ArrayList<>();
-            for (int i = 0; i < pages.length(); i++) {
-                JSONObject p = pages.getJSONObject(i);
-                JSONArray paras = p.getJSONArray("paras");
-                List<String> pp = new ArrayList<>();
-                for (int j = 0; j < paras.length(); j++)
-                    pp.add(paras.getString(j));
-                list.add(new RefPage(p.getInt("page"), pp));
-            }
-            ref.put(k, Collections.unmodifiableList(list));
+            JSONObject p = rf.getJSONObject(k);
+            List<Integer> pg = new ArrayList<>();
+            JSONArray pa = p.getJSONArray("pages");
+            for (int i = 0; i < pa.length(); i++)
+                pg.add(pa.getInt(i));
+            List<RefBlock> bl = new ArrayList<>();
+            JSONArray ba = p.getJSONArray("blocks");
+            for (int i = 0; i < ba.length(); i++)
+                bl.add(new RefBlock(ba.getJSONObject(i)));
+            ref.put(k, new RefPage(k, p.getString("title"), pg, bl,
+                    p.optString("cite", "")));
         }
         reference = Collections.unmodifiableMap(ref);
     }

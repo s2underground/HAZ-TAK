@@ -93,6 +93,9 @@ public final class HazPane {
     private static final int GREENBG = 0xFF33691E;
     private static final int BLUE = 0xFF40C4FF;
     private static final int SEL = 0xFF455A64;
+    /** Selected choice: strong fill, bright border, bold text. */
+    private static final int PICK = 0xFF00796B;
+    private static final int PICK_EDGE = 0xFF64FFDA;
     private static final int BTN = 0xFF3C3C3C;
     private static final int SEND = 0xFF1565C0;
     private static final int GUIDE_BAR = 0xFFE65100;
@@ -130,6 +133,9 @@ public final class HazPane {
     private EditText windEdit;
     private final Map<Scenario.Wind, Button> speedButtons = new HashMap<>();
     private final List<Button> containerButtons = new ArrayList<>();
+    /** ID / name result buttons: {Button, Erg.Entry} or {Button, null, id}. */
+    private final List<Object[]> resultButtons = new ArrayList<>();
+    private final List<Button> windButtons = new ArrayList<>();
     private String containerGas;
     private CheckBox doubleBox;
     private TextView preview;
@@ -350,28 +356,36 @@ public final class HazPane {
         col.addView(newSection);
         buildNewIncident(newSection);
 
-        col.addView(header("REFERENCE (WORD FOR WORD FROM ERG2024)"));
-        String[][] refs = {
-                { "phone_numbers", "24-hour emergency response numbers" },
-                { "how_to_use", "How to use this guidebook" },
-                { "how_to_use_table1", "How to use Table 1 (zones)" },
-                { "green_intro", "Factors that may change the distances" },
-                { "protective_actions", "Protective actions: evacuate or shelter" },
-                { "national_response_centers", "National response centers" },
-        };
-        for (int i = 0; i < refs.length; i += 2) {
-            LinearLayout line = horizontal();
-            for (int j = i; j < Math.min(i + 2, refs.length); j++) {
-                final String[] r = refs[j];
-                Button b = button(r[1], BTN);
-                b.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        showReference(r[0], r[1]);
-                    }
-                });
-                line.addView(b, weight());
+        col.addView(header("REFERENCE (FROM ERG2024)"));
+        String[] refs = { "phone_numbers", "how_to_use", "placard_intro",
+                "how_to_use_table1", "green_intro", "protective_actions",
+                "table1_background", "national_response_centers" };
+        List<Button> refButtons = new ArrayList<>();
+        for (final String key : refs) {
+            final Erg.RefPage page = erg.reference.get(key);
+            if (page == null)
+                continue;
+            Button b = button(page.title, key.equals("phone_numbers") ? 0xFF8E2424 : BTN);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showReference(page);
+                }
+            });
+            refButtons.add(b);
+        }
+        Button t3 = button("Table 3: six common TIH gases, large spills", BTN);
+        t3.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showTable3();
             }
+        });
+        refButtons.add(t3);
+        for (int i = 0; i < refButtons.size(); i += 2) {
+            LinearLayout line = horizontal();
+            for (int j = i; j < Math.min(i + 2, refButtons.size()); j++)
+                line.addView(refButtons.get(j), weight());
             col.addView(line);
         }
         Button fa = button("General First Aid", BTN);
@@ -527,7 +541,7 @@ public final class HazPane {
             return;
         identifyBody.removeAllViews();
         for (Button b : modeButtons)
-            tint(b, b.getTag().equals(mode) ? SEL : BTN);
+            select(b, b.getTag().equals(mode), BTN);
         if (erg == null || mode == null) {
             if (mode == null)
                 identifyBody.addView(text("Use the ID number from the placard, "
@@ -580,8 +594,8 @@ public final class HazPane {
                                 p.cls, dp(44));
                         b.setCompoundDrawablesRelative(null, d, null, null);
                         b.setTag(p.key);
-                        if (p.key.equals(scenario.placardKey))
-                            tint(b, SEL);
+                        select(b, p.key.equals(scenario.placardKey)
+                                && scenario.byGuideOnly(), BTN);
                         b.setOnClickListener(new View.OnClickListener() {
                             @Override
                             public void onClick(View v) {
@@ -607,6 +621,7 @@ public final class HazPane {
 
     private void showIdResults(LinearLayout results, String typed) {
         results.removeAllViews();
+        resultButtons.clear();
         final String id = Search.cleanId(typed);
         if (id == null)
             return;
@@ -622,6 +637,7 @@ public final class HazPane {
         if (es.size() > 1) {
             Button any = button("Exact name not known: use all " + es.size()
                     + " entries (largest distances, ERG2024 p. 288)", BTN);
+            resultButtons.add(new Object[] { any, null, id });
             any.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -632,10 +648,12 @@ public final class HazPane {
             });
             results.addView(any, full());
         }
+        restyleResults();
     }
 
     private void showNameResults(LinearLayout results, String typed) {
         results.removeAllViews();
+        resultButtons.clear();
         List<Erg.Entry> es = Search.byName(erg, typed);
         if (typed.trim().length() >= 2 && es.isEmpty())
             results.addView(text("No match.", 13, DIM, false));
@@ -648,6 +666,28 @@ public final class HazPane {
             }
             results.addView(entryButton(e), full());
         }
+        restyleResults();
+    }
+
+    /** Is this index entry the one chosen? */
+    private boolean chosen(Erg.Entry e) {
+        if (scenario.name == null || !e.name.equals(scenario.name)
+                || !e.id.equals(scenario.id))
+            return false;
+        return !e.id.isEmpty() || e.guideNumber().equals(scenario.guide);
+    }
+
+    /** Show which result is selected (the user taps one of several). */
+    private void restyleResults() {
+        for (Object[] o : resultButtons) {
+            Button b = (Button) o[0];
+            if (o[1] instanceof Erg.Entry) {
+                Erg.Entry e = (Erg.Entry) o[1];
+                select(b, chosen(e), e.highlighted() ? GREENBG : BTN);
+            } else {
+                select(b, scenario.nameUnknown() && scenario.id.equals(o[2]), BTN);
+            }
+        }
     }
 
     private Button entryButton(final Erg.Entry e) {
@@ -656,6 +696,7 @@ public final class HazPane {
                 + "\nGuide " + e.guide + (flags.isEmpty() ? "" : "  ·  " + flags),
                 e.highlighted() ? GREENBG : BTN);
         b.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        resultButtons.add(new Object[] { b, e });
         b.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -695,8 +736,79 @@ public final class HazPane {
     // ------------------------------------------------------------------
     // New incident: situation
 
+    /** One question of the situation step, in its own card. */
+    private static final class Question {
+        LinearLayout card;
+        TextView status;
+        int state = -1;
+    }
+
+    private static final int REQUIRED = 0, ANSWERED = 1, OPTIONAL = 2;
+
+    private Question qSpill, qFire, qWater, qTod, qWind, qT3, qDouble;
+
+    private Question question(LinearLayout parent, String title, String help) {
+        Question q = new Question();
+        q.card = vertical();
+        q.card.setPadding(dp(8), dp(6), dp(8), dp(8));
+        LinearLayout head = horizontal();
+        TextView t = text(title, 14, TEXT, true);
+        head.addView(t, weight());
+        q.status = text("", 11, DIM, true);
+        q.status.setPadding(dp(6), dp(2), 0, 0);
+        head.addView(q.status);
+        q.card.addView(head);
+        if (help != null) {
+            TextView h = text(help, 12, DIM, false);
+            h.setPadding(0, dp(1), 0, dp(4));
+            q.card.addView(h);
+        }
+        LinearLayout.LayoutParams lp = full();
+        lp.setMargins(0, dp(8), 0, 0);
+        parent.addView(q.card, lp);
+        mark(q, REQUIRED);
+        return q;
+    }
+
+    private void mark(Question q, int state) {
+        if (q.state == state)
+            return;
+        q.state = state;
+        int edge;
+        switch (state) {
+            case ANSWERED:
+                q.status.setText("✓ ANSWERED");
+                q.status.setTextColor(GREEN);
+                edge = 0xFF2E7D32;
+                break;
+            case OPTIONAL:
+                q.status.setText("OPTIONAL");
+                q.status.setTextColor(DIM);
+                edge = 0xFF555555;
+                break;
+            default:
+                q.status.setText("● REQUIRED");
+                q.status.setTextColor(AMBER);
+                edge = AMBER;
+        }
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(CARD);
+        g.setCornerRadius(dp(6));
+        g.setStroke(dp(state == REQUIRED ? 2 : 1), edge);
+        q.card.setBackground(g);
+    }
+
+    /** Required while the zones still need it; answered once set. */
+    private void mark(Question q, Zones.Need need, boolean answered) {
+        mark(q, zones.missing.contains(need) ? REQUIRED
+                : answered ? ANSWERED : OPTIONAL);
+    }
+
     private void buildSituation(LinearLayout col) {
-        col.addView(header("NEW INCIDENT: 2. SITUATION"));
+        col.addView(header("NEW INCIDENT: 2. SITUATION (answer each question)"));
+
+        qSpill = question(col, "How much was released?",
+                "Small or large spill (ERG2024 p. 288).");
         LinearLayout spill = horizontal();
         smallBtn = button("Small spill\n208 L (55 US gal) or less", BTN);
         largeBtn = button("Large spill\nmore than 208 L (55 US gal)", BTN);
@@ -716,11 +828,13 @@ public final class HazPane {
         });
         spill.addView(smallBtn, weight());
         spill.addView(largeBtn, weight());
-        col.addView(spill);
+        qSpill.card.addView(spill);
 
+        qFire = question(col, "Is the material on fire?",
+                "Fire changes which distances apply (ERG2024 flowchart, p. 1).");
         LinearLayout fire = horizontal();
-        noFireBtn = button("No fire", BTN);
-        fireBtn = button("Fire involved", BTN);
+        noFireBtn = button("No", BTN);
+        fireBtn = button("Yes, on fire", BTN);
         noFireBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -737,14 +851,16 @@ public final class HazPane {
         });
         fire.addView(noFireBtn, weight());
         fire.addView(fireBtn, weight());
-        col.addView(fire);
+        qFire.card.addView(fire);
 
-        waterRow = vertical();
-        waterRow.addView(text("Water-reactive: where was it spilled?", 12, DIM, false));
+        qWater = question(col, "Where was it spilled?",
+                "This material reacts with water: Table 1 has separate rows "
+                        + "(ERG2024 p. 281).");
+        waterRow = qWater.card;
         LinearLayout w = horizontal();
         landBtn = button("On land", BTN);
         waterBtn = button("In water", BTN);
-        waterUnkBtn = button("Not sure", BTN);
+        waterUnkBtn = button("Not sure /\nboth", BTN);
         for (final Object[] o : new Object[][] { { landBtn, Scenario.Water.LAND },
                 { waterBtn, Scenario.Water.WATER },
                 { waterUnkBtn, Scenario.Water.UNKNOWN } }) {
@@ -758,9 +874,9 @@ public final class HazPane {
             w.addView((Button) o[0], weight());
         }
         waterRow.addView(w);
-        col.addView(waterRow);
 
-        todRow = vertical();
+        qTod = question(col, "Day or night?", null);
+        todRow = qTod.card;
         LinearLayout t = horizontal();
         dayBtn = button("Day", BTN);
         nightBtn = button("Night", BTN);
@@ -783,12 +899,12 @@ public final class HazPane {
         todRow.addView(t);
         todNote = text("", 11, DIM, false);
         todRow.addView(todNote);
-        col.addView(todRow);
 
-        windRow = vertical();
-        windRow.addView(text("Wind blowing FROM (degrees true)", 12, DIM, false));
-        windEdit = edit("e.g. 270 for a west wind", InputType.TYPE_CLASS_NUMBER
-                | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        qWind = question(col, "Which way is the wind blowing FROM?", null);
+        windRow = qWind.card;
+        LinearLayout entry = horizontal();
+        windEdit = edit("Degrees true, e.g. 270 = from the west",
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         windEdit.setFilters(new android.text.InputFilter[] {
                 new android.text.InputFilter.LengthFilter(5) });
         windEdit.addTextChangedListener(new Watcher() {
@@ -801,58 +917,74 @@ public final class HazPane {
                 updateSituation();
             }
         });
-        windRow.addView(windEdit, full());
+        entry.addView(windEdit, weight());
+        Button clearWind = button("Clear", BTN);
+        clearWind.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setWindText(Double.NaN);
+                scenario = scenario.withWindFrom(Double.NaN);
+                updateSituation();
+            }
+        });
+        entry.addView(clearWind);
+        windRow.addView(entry, full());
         String[] names = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
         LinearLayout c1 = horizontal(), c2 = horizontal();
+        windButtons.clear();
         for (int i = 0; i < names.length; i++) {
             final int deg = i * 45;
             Button b = button(names[i], BTN);
             b.setMinWidth(0);
+            b.setTag(deg);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    updatingWind = true;
-                    windEdit.setText(Integer.toString(deg));
-                    updatingWind = false;
+                    setWindText(deg);
                     scenario = scenario.withWindFrom(deg);
                     updateSituation();
                 }
             });
+            windButtons.add(b);
             (i < 4 ? c1 : c2).addView(b, weight());
         }
         windRow.addView(c1);
         windRow.addView(c2);
         windNote = text("", 11, DIM, false);
         windRow.addView(windNote);
-        col.addView(windRow);
 
-        t3Box = vertical();
+        qT3 = question(col, "Table 3: container and wind speed", null);
+        t3Box = qT3.card;
         t3Title = text("", 12, DIM, false);
         t3Box.addView(t3Title);
+        t3Box.addView(text("Transport container", 12, TEXT, true));
         containerRow = vertical();
         t3Box.addView(containerRow);
+        TextView ws = text("Wind speed", 12, TEXT, true);
+        ws.setPadding(0, dp(6), 0, 0);
+        t3Box.addView(ws);
         speedRow = horizontal();
-        for (final Scenario.Wind ws : Scenario.Wind.values()) {
-            Button b = button(ws == Scenario.Wind.UNKNOWN ? "Not sure"
-                    : ws == Scenario.Wind.LOW ? "Low\n< 6 mph"
-                            : ws == Scenario.Wind.MODERATE ? "Moderate\n6-12 mph"
+        for (final Scenario.Wind sp : Scenario.Wind.values()) {
+            Button b = button(sp == Scenario.Wind.UNKNOWN ? "Not sure"
+                    : sp == Scenario.Wind.LOW ? "Low\n< 6 mph"
+                            : sp == Scenario.Wind.MODERATE ? "Moderate\n6-12 mph"
                                     : "High\n> 12 mph", BTN);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    scenario = scenario.withWindSpeed(ws);
+                    scenario = scenario.withWindSpeed(sp);
                     updateSituation();
                 }
             });
-            speedButtons.put(ws, b);
+            speedButtons.put(sp, b);
             speedRow.addView(b, weight());
         }
         t3Box.addView(speedRow);
-        col.addView(t3Box);
 
+        qDouble = question(col, "Was the whole contents released at once?", null);
         doubleBox = new CheckBox(plugin);
-        doubleBox.setText("Whole contents released at once (terrorism, sabotage "
-                + "or catastrophic failure): double the distances (ERG2024 p. 289)");
+        doubleBox.setText("Yes: terrorism, sabotage or catastrophic failure. "
+                + "Double the distances (ERG2024 p. 289).");
         doubleBox.setTextColor(TEXT);
         doubleBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
@@ -861,10 +993,20 @@ public final class HazPane {
                 updateSituation();
             }
         });
-        col.addView(doubleBox);
+        qDouble.card.addView(doubleBox);
+
+        TextView ph = header("WHAT WILL BE DRAWN");
+        col.addView(ph);
         preview = text("", 13, TEXT, false);
-        preview.setPadding(0, dp(4), 0, dp(4));
-        col.addView(preview);
+        preview.setPadding(dp(8), dp(6), dp(8), dp(6));
+        preview.setBackgroundColor(CARD);
+        col.addView(preview, full());
+    }
+
+    private void setWindText(double deg) {
+        updatingWind = true;
+        windEdit.setText(Double.isNaN(deg) ? "" : Integer.toString((int) Math.round(deg)));
+        updatingWind = false;
     }
 
     static double parseWind(String s) {
@@ -883,6 +1025,7 @@ public final class HazPane {
         if (erg == null || situation == null)
             return;
         zones = Zones.compute(erg, scenario);
+        restyleResults();
         boolean identified = scenario.identified() && !zones.missing.contains(
                 Zones.Need.IDENTIFY);
         // identification summary
@@ -902,38 +1045,71 @@ public final class HazPane {
         }
         situation.setVisibility(identified ? View.VISIBLE : View.GONE);
         if (identified) {
-            tint(smallBtn, scenario.spill == Scenario.Spill.SMALL ? SEL : BTN);
-            tint(largeBtn, scenario.spill == Scenario.Spill.LARGE ? SEL : BTN);
-            tint(noFireBtn, Boolean.FALSE.equals(scenario.fire) ? SEL : BTN);
-            tint(fireBtn, Boolean.TRUE.equals(scenario.fire) ? SEL : BTN);
+            select(smallBtn, scenario.spill == Scenario.Spill.SMALL, BTN);
+            select(largeBtn, scenario.spill == Scenario.Spill.LARGE, BTN);
+            mark(qSpill, Zones.Need.SPILL, scenario.spill != null);
+            select(noFireBtn, Boolean.FALSE.equals(scenario.fire), BTN);
+            select(fireBtn, Boolean.TRUE.equals(scenario.fire), BTN);
+            mark(qFire, Zones.Need.FIRE, scenario.fire != null);
             boolean waterRelevant = waterRelevant();
             waterRow.setVisibility(waterRelevant ? View.VISIBLE : View.GONE);
-            tint(landBtn, scenario.water == Scenario.Water.LAND ? SEL : BTN);
-            tint(waterBtn, scenario.water == Scenario.Water.WATER ? SEL : BTN);
-            tint(waterUnkBtn, scenario.water == Scenario.Water.UNKNOWN ? SEL : BTN);
-            boolean table = tableCandidate();
+            select(landBtn, scenario.water == Scenario.Water.LAND, BTN);
+            select(waterBtn, scenario.water == Scenario.Water.WATER, BTN);
+            select(waterUnkBtn, scenario.water == Scenario.Water.UNKNOWN, BTN);
+            mark(qWater, Zones.Need.WATER, scenario.water != null);
+            boolean table = zones.tableApplies;
             todRow.setVisibility(table ? View.VISIBLE : View.GONE);
-            tint(dayBtn, scenario.tod == Scenario.TimeOfDay.DAY ? SEL : BTN);
-            tint(nightBtn, scenario.tod == Scenario.TimeOfDay.NIGHT ? SEL : BTN);
+            select(dayBtn, scenario.tod == Scenario.TimeOfDay.DAY, BTN);
+            select(nightBtn, scenario.tod == Scenario.TimeOfDay.NIGHT, BTN);
+            mark(qTod, Zones.Need.TIME_OF_DAY, scenario.tod != null);
             todNote.setText(scenario.tod == null ? "Choose day or night."
                     : scenario.todFromSun ? "Filled in from the sun's position now "
                             + "(day = after sunrise and before sunset, ERG2024 "
                             + "p. 288). Tap to change."
                             : "Chosen by you.");
-            boolean windShown = table || zones.downwind != null
-                    || zones.missing.contains(Zones.Need.WIND_DIRECTION);
-            windRow.setVisibility(windShown ? View.VISIBLE : View.GONE);
-            windNote.setText(scenario.hasWind()
-                    ? "Wind from " + Formats.bearing(scenario.windFromDeg)
-                            + ": zones extend toward "
-                            + Formats.compass(scenario.windFromDeg + 180) + "."
-                    : table ? "Needed to draw the protective action zone."
-                            : "Optional: draws the downwind evacuation distance.");
+            // The wind can always be entered; it is required only where the
+            // guidebook draws a downwind zone (Table 1).
+            windRow.setVisibility(View.VISIBLE);
+            mark(qWind, Zones.Need.WIND_DIRECTION, scenario.hasWind());
+            for (Button b : windButtons)
+                select(b, scenario.hasWind() && Math.abs(((scenario.windFromDeg
+                        - (Integer) b.getTag()) % 360 + 540) % 360 - 180) < 0.5, BTN);
+            windNote.setText(windNote());
             updateTable3();
+            mark(qT3, zones.missing.contains(Zones.Need.CONTAINER)
+                    || zones.missing.contains(Zones.Need.WIND_SPEED) ? REQUIRED
+                            : ANSWERED);
             doubleBox.setChecked(scenario.doubled);
+            mark(qDouble, scenario.doubled ? ANSWERED : OPTIONAL);
             preview.setText(previewText());
         }
         updatePlacement();
+    }
+
+    private String windNote() {
+        boolean table = zones.tableApplies;
+        StringBuilder sb = new StringBuilder();
+        if (scenario.hasWind())
+            sb.append("Wind from ").append(Formats.bearing(scenario.windFromDeg))
+                    .append(": downwind is toward ")
+                    .append(Formats.compass(scenario.windFromDeg + 180)).append(". ");
+        if (table && (zones.paz != null
+                || zones.missing.contains(Zones.Need.WIND_DIRECTION)))
+            sb.append("Needed to draw the protective action zone (a square "
+                    + "downwind of the spill, ERG2024 p. 289).");
+        else if (table)
+            sb.append("Table 1 material: the protective action zone is drawn "
+                    + "downwind once the other questions are answered.");
+        else if (zones.downwind != null)
+            sb.append("Optional: draws the guide's large-spill downwind "
+                    + "evacuation distance as a line.");
+        else
+            sb.append("Optional. For this material the guide gives distances "
+                    + "in all directions (circles); the ERG draws a downwind "
+                    + "zone only for green-highlighted materials. If you enter "
+                    + "the wind, a blue arrow on the map shows which way is "
+                    + "downwind.");
+        return sb.toString();
     }
 
     private boolean waterRelevant() {
@@ -942,13 +1118,6 @@ public final class HazPane {
                 for (Erg.T1Row r : erg.table1For(e))
                     if (r.variant == Erg.Variant.WATER)
                         return true;
-        return false;
-    }
-
-    private boolean tableCandidate() {
-        for (Erg.Entry e : zones.candidates)
-            if (e.highlighted())
-                return true;
         return false;
     }
 
@@ -1000,9 +1169,9 @@ public final class HazPane {
             }
         }
         for (Button b : containerButtons)
-            tint(b, b.getTag().equals(scenario.container) ? SEL : BTN);
+            select(b, b.getTag().equals(scenario.container), BTN);
         for (Map.Entry<Scenario.Wind, Button> e : speedButtons.entrySet())
-            tint(e.getValue(), e.getKey() == scenario.windSpeed ? SEL : BTN);
+            select(e.getValue(), e.getKey() == scenario.windSpeed, BTN);
     }
 
     private String previewText() {
@@ -1030,6 +1199,10 @@ public final class HazPane {
         if (zones.downwind != null)
             sb.append("\nLarge spill, downwind evacuation: ").append(zones.downwind.label)
                     .append(scenario.hasWind() ? "." : " (enter the wind to draw it).");
+        if (scenario.hasWind() && zones.paz == null && zones.downwind == null)
+            sb.append("\nWind arrow (blue): from ").append(Formats.bearing(
+                    scenario.windFromDeg)).append(", pointing downwind. It shows "
+                    + "the wind you entered; it is not a distance.");
         sb.append("\nSource: ").append(zones.paz != null ? zones.paz.cite
                 : zones.isolation.cite);
         for (String n : zones.notes)
@@ -1943,7 +2116,8 @@ public final class HazPane {
         if (guides != null && guides.size() > 1) {
             LinearLayout others = horizontal();
             for (final String other : guides) {
-                Button b = button("Guide " + other, other.equals(g.number) ? SEL : BTN);
+                Button b = button("Guide " + other, BTN);
+                select(b, other.equals(g.number), BTN);
                 b.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
@@ -1974,46 +2148,56 @@ public final class HazPane {
         showSub(col);
     }
 
-    /** The material's green-table rows, as printed. */
+    /** The material's green-table rows, as printed, drawn as tables. */
     private void addTables(LinearLayout col, Erg.Entry e) {
-        col.addView(header("TABLE 1 (GREEN SECTION)"));
+        col.addView(header("TABLE 1: INITIAL ISOLATION AND PROTECTIVE ACTION DISTANCES"));
         for (Erg.T1Row r : erg.table1For(e)) {
-            StringBuilder sb = new StringBuilder();
-            sb.append(r.name).append(" (p. ").append(r.page).append(")");
-            sb.append("\nSmall spill: isolate ").append(r.small.isolate.label())
-                    .append("; protect downwind day ").append(r.small.day.label())
-                    .append(", night ").append(r.small.night.label());
-            sb.append("\nLarge spill: ");
-            if (r.largeTable3)
-                sb.append("Refer to Table 3");
-            else
-                sb.append("isolate ").append(r.large.isolate.label())
-                        .append("; protect downwind day ").append(r.large.day.label())
-                        .append(", night ").append(r.large.night.label());
-            col.addView(text(sb.toString(), 13, TEXT, false));
+            col.addView(text(r.name + "  (p. " + r.page + ")", 13, TEXT, true));
+            List<List<CharSequence>> rows = new ArrayList<>();
+            rows.add(t1Row("Small spill", r.small, false));
+            rows.add(t1Row("Large spill", r.large, r.largeTable3));
+            col.addView(Ui.table(plugin, java.util.Arrays.asList("",
+                    "First ISOLATE in all directions", "Then PROTECT downwind: DAY",
+                    "Then PROTECT downwind: NIGHT"), rows,
+                    new float[] { 0.9f, 1.2f, 1.1f, 1.1f }, 12), lp(2, 8));
         }
         Erg.T2Row t2 = erg.table2For(e);
         if (t2 != null) {
-            col.addView(header("TABLE 2 (p. " + t2.page + ")"));
-            col.addView(text("TIH gas(es) produced when spilled in water: "
-                    + android.text.TextUtils.join(", ", t2.gases) + ". "
-                    + erg.rule("table2_info_only").text, 13, TEXT, false));
+            col.addView(header("TABLE 2: WATER-REACTIVE MATERIALS (p. " + t2.page + ")"));
+            List<List<CharSequence>> rows = new ArrayList<>();
+            rows.add(java.util.Arrays.<CharSequence>asList(t2.name,
+                    android.text.TextUtils.join("\n", t2.gases)));
+            col.addView(Ui.table(plugin, java.util.Arrays.asList("Material",
+                    "TIH gas(es) produced"), rows, new float[] { 1.4f, 1f }, 12),
+                    lp(2, 2));
+            col.addView(text(erg.rule("table2_info_only").text, 12, DIM, false));
         }
         Erg.T3Gas t3 = erg.table3For(e.id);
         if (t3 != null) {
-            col.addView(header("TABLE 3 (p. " + t3.page + "), LARGE SPILLS"));
-            for (Erg.T3Row r : t3.rows) {
-                StringBuilder sb = new StringBuilder(r.container);
-                sb.append(": isolate ").append(r.isolate.label());
-                sb.append("\n  Day: low ").append(r.day.get(Erg.WindSpeed.LOW).label())
-                        .append(", moderate ").append(r.day.get(Erg.WindSpeed.MODERATE).label())
-                        .append(", high ").append(r.day.get(Erg.WindSpeed.HIGH).label());
-                sb.append("\n  Night: low ").append(r.night.get(Erg.WindSpeed.LOW).label())
-                        .append(", moderate ").append(r.night.get(Erg.WindSpeed.MODERATE).label())
-                        .append(", high ").append(r.night.get(Erg.WindSpeed.HIGH).label());
-                col.addView(text(sb.toString(), 12, TEXT, false));
-            }
+            col.addView(header("TABLE 3: LARGE SPILLS"));
+            addTable3(col, t3);
         }
+    }
+
+    private List<CharSequence> t1Row(String spill, Erg.T1Dist d, boolean t3) {
+        List<CharSequence> row = new ArrayList<>();
+        row.add(spill);
+        if (t3 || d == null) {
+            row.add("Refer to Table 3");
+            row.add("");
+            row.add("");
+        } else {
+            row.add(d.isolate.label());
+            row.add(d.day.label());
+            row.add(d.night.label());
+        }
+        return row;
+    }
+
+    private LinearLayout.LayoutParams lp(int top, int bottom) {
+        LinearLayout.LayoutParams p = full();
+        p.setMargins(0, dp(top), 0, dp(bottom));
+        return p;
     }
 
     private View block(Erg.Block b) {
@@ -2081,22 +2265,94 @@ public final class HazPane {
         showSub(col);
     }
 
-    private void showReference(String key, String title) {
-        List<Erg.RefPage> pages = erg.reference.get(key);
-        if (pages == null)
-            return;
-        LinearLayout col = subHeader(title);
-        col.addView(text("Text exactly as printed in " + erg.edition
-                + " (layout simplified).", 11, DIM, false));
-        for (Erg.RefPage p : pages) {
-            col.addView(header("PAGE " + p.page));
-            for (String para : p.paras) {
-                TextView t = text(para, 13, TEXT, false);
-                t.setPadding(0, dp(2), 0, dp(4));
-                col.addView(t);
+    private void showReference(Erg.RefPage page) {
+        LinearLayout col = subHeader(page.title);
+        col.addView(text(erg.edition + " " + page.pagesLabel() + ". Words exactly "
+                + "as printed; layout redrawn for the screen. Buttons marked "
+                + "\"In HAZ-TAK\" are the plugin's.", 11, DIM, false));
+        boolean phones = page.key.equals("phone_numbers")
+                || page.key.equals("national_response_centers");
+        if (phones)
+            col.addView(text("Tap a number to open it in the phone app.", 12,
+                    BLUE, false));
+        new RefRenderer(plugin, mapView.getContext(), new RefRenderer.Actions() {
+            @Override
+            public void run(String action) {
+                referenceAction(action);
             }
-        }
+        }, phones).render(col, page);
         showSub(col);
+    }
+
+    /** A flowchart button: go to the matching way of identifying. */
+    private void referenceAction(String action) {
+        if ("TABLE3".equals(action)) {
+            showTable3();
+            return;
+        }
+        String m;
+        switch (action) {
+            case "ID":
+                m = "ID";
+                break;
+            case "NAME":
+                m = "NAME";
+                break;
+            case "PLACARD":
+            case "EXPLOSIVES":
+                m = "PLACARD";
+                break;
+            case "UNKNOWN":
+                m = "UNKNOWN";
+                break;
+            default:
+                return;
+        }
+        closeSub();
+        setMode(m);
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (newSection != null)
+                    root.smoothScrollTo(0, Math.max(0, newSection.getTop() - dp(8)));
+            }
+        }, 50);
+    }
+
+    /** Table 3 for all six gases, as grids. */
+    private void showTable3() {
+        LinearLayout col = subHeader("TABLE 3: LARGE SPILLS OF SIX COMMON TIH GASES");
+        col.addView(text(erg.edition + " Table 3, pp. " + erg.table3.get(0).page + "-"
+                + erg.table3.get(erg.table3.size() - 1).page + ". Values exactly as "
+                + "printed. Large spill = more than 208 L (55 US gal).", 11, DIM,
+                false));
+        for (Erg.T3Gas g : erg.table3)
+            addTable3(col, g);
+        showSub(col);
+    }
+
+    private void addTable3(LinearLayout col, Erg.T3Gas g) {
+        TextView h = text(g.title() + " (p. " + g.page + ")", 14, AMBER, true);
+        h.setPadding(0, dp(12), 0, dp(4));
+        col.addView(h);
+        List<List<CharSequence>> rows = new ArrayList<>();
+        for (Erg.T3Row r : g.rows) {
+            List<CharSequence> row = new ArrayList<>();
+            row.add(r.container);
+            row.add(r.isolate.label());
+            row.add(winds(r.day));
+            row.add(winds(r.night));
+            rows.add(row);
+        }
+        col.addView(Ui.table(plugin, java.util.Arrays.asList("Transport container",
+                "Initial isolation", "Protect downwind: DAY", "Protect downwind: NIGHT"),
+                rows, new float[] { 1.3f, 1f, 1.25f, 1.25f }, 11), full());
+    }
+
+    private static CharSequence winds(Map<Erg.WindSpeed, Erg.Downwind> m) {
+        return "Low wind: " + m.get(Erg.WindSpeed.LOW).label()
+                + "\nModerate: " + m.get(Erg.WindSpeed.MODERATE).label()
+                + "\nHigh wind: " + m.get(Erg.WindSpeed.HIGH).label();
     }
 
     // ------------------------------------------------------------------
@@ -2204,6 +2460,19 @@ public final class HazPane {
         b.setMinHeight(dp(44));
         tint(b, color);
         return b;
+    }
+
+    /**
+     * Selected or not: a selected choice gets a strong teal fill, a bright
+     * border and bold text so it is obvious which answer is in use.
+     */
+    private void select(Button b, boolean on, int base) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(on ? PICK : base);
+        g.setCornerRadius(dp(4));
+        g.setStroke(on ? dp(3) : dp(1), on ? PICK_EDGE : 0xFF000000);
+        b.setBackground(g);
+        b.setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
     }
 
     private void tint(Button b, int color) {

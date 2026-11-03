@@ -39,9 +39,11 @@ Argentina):
 - Send to everyone or chosen contacts, mark cleared (logged), update the
   wind or day/night, rename, export as ATAK data package, KMZ or GPX,
   delete locally or for everyone.
-- Reference pages word for word: 24-hour emergency response numbers, how
-  to use the guidebook and Table 1, factors that change the distances,
-  protective actions, General First Aid.
+- Reference pages word for word, redrawn for the screen: the flowchart,
+  24-hour emergency response numbers (tap to dial), placards, how to use
+  Table 1 (with the zone figure), factors that change the distances,
+  evacuate or shelter, national response centers, Table 3, General First
+  Aid.
 
 HAZ-TAK is fully offline. It does not replace training, the shipping
 papers, the emergency response numbers, or technical specialists. The
@@ -51,6 +53,9 @@ _________________________________________________________________
 STATUS
 
 0.1 (Oct 2026): first test build.
+0.2 (Nov 2026): device-test fixes: clear selected state, one card per
+situation question, reference pages rebuilt as structured text and
+tables, wind always enterable with a wind arrow for circle-only zones.
 Planned: 1.1 camera placard reader (photo -> 4-digit ID with Tesseract,
 offline, always confirmed by the user); later rail car / road trailer
 identification, the chemical warfare agent section, Spanish/French text.

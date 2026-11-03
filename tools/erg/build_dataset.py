@@ -7,17 +7,10 @@ from ergpdf import open_pdf, printed_page, normalize_chars
 
 PDF = sys.argv[1]; OUT = sys.argv[2]
 
-# Reference pages shown in the plugin, verbatim (PDF page numbers)
-REF_PAGES = {
-    'how_to_use': [3],
-    'placard_intro': [9],
-    'green_intro': [282, 283, 284],
-    'protective_actions': [285, 286, 287],
-    'table1_background': [288, 289],
-    'how_to_use_table1': [290, 291],
-    'phone_numbers': [391],
-    'national_response_centers': [386, 387, 388],
-}
+# Reference pages shown in the plugin: structured by hand in reference_pages.py,
+# every text checked verbatim against its PDF pages by verify_reference.py.
+from reference_pages import PAGES as REF_PAGES
+import verify_reference
 
 # Rule quotes (printed page, exact text). Checked below.
 RULES = {
@@ -55,6 +48,18 @@ def page_text(d, pdf_page):
     return paras
 
 
+def ref_cite(d, pdf_pages):
+    """'p. 1', 'pp. 280-282' or 'p. 388 and inside back cover' (pages without a printed number)."""
+    nums = sorted(printed_page(p) for p in pdf_pages if re.search(r'Page \d+', d[p - 1].get_text()))
+    unnumbered = [p for p in pdf_pages if not re.search(r'Page \d+', d[p - 1].get_text())]
+    parts = []
+    if nums:
+        parts.append(f'p. {nums[0]}' if nums[0] == nums[-1] else f'pp. {nums[0]}-{nums[-1]}')
+    for p in unnumbered:
+        parts.append('inside back cover' if p == d.page_count - 1 else 'back cover' if p == d.page_count else f'PDF page {p}')
+    return ' and '.join(parts)
+
+
 def flat(s):
     return re.sub(r'\s+', ' ', normalize_chars(s)).strip()
 
@@ -72,6 +77,8 @@ def main():
     plac = json.load(open('placards.json'))
 
     problems = []
+    ref_count, ref_problems = verify_reference.verify(d)
+    problems += ref_problems
     # rule quotes must be verbatim on the cited page
     for k, (pp, q) in RULES.items():
         txt = flat(' '.join(page_text(d, d.page_count if pp == 'back cover' else pp + 2)))
@@ -107,7 +114,7 @@ def main():
         g['distances'] = gdist.get(g['guide'], [])
 
     data = {
-        'format': 1,
+        'format': 2,
         'edition': 'ERG2024',
         'source': {'title': '2024 Emergency Response Guidebook (ERG2024), English',
                    'publisher': 'U.S. DOT PHMSA, Transport Canada, SCT (Mexico), CIQUIME (Argentina)',
@@ -123,7 +130,10 @@ def main():
         'table3': t3,
         'placards': plac,
         'rules': {k: {'page': p, 'text': q} for k, (p, q) in RULES.items()},
-        'reference': {k: [{'page': printed_page(p), 'paras': page_text(d, p)} for p in v] for k, v in REF_PAGES.items()},
+        'reference': {k: {'title': v['title'], 'pages': [printed_page(p) for p in v['pdf']],
+                          'cite': ref_cite(d, v['pdf']),
+                          'blocks': [{bk: bv for bk, bv in b.items() if bk not in ('verify', 'image')} for b in v['blocks']]}
+                      for k, v in REF_PAGES.items()},
     }
     json.dump(data, open(f'{OUT}/erg2024.json', 'w'), ensure_ascii=False, separators=(',', ':'))
 
@@ -143,7 +153,10 @@ def main():
            '- Every highlighted index entry has a Table 1 row and every Table 1 row matches a highlighted index entry.',
            '- Every Table 2 row matches a Table 1 "(when spilled in water)" row and vice versa.',
            '- Every guide number referenced by the index exists.',
-           f'- Rule quotes checked verbatim against their pages: {len(RULES)}', '',
+           f'- Rule quotes checked verbatim against their pages: {len(RULES)}',
+           f'- Reference pages: {len(REF_PAGES)}; texts checked verbatim against their pages: {ref_count}; '
+           'drawn as outlines (no text layer), checked by eye against the rendered page: ' +
+           '; '.join(f'"{t}" ({n})' for n, t in verify_reference.by_eye()), '',
            '## Problems', ''] + ([f'- {p}' for p in problems] or ['- none'])
     open(f'{OUT}/REPORT.md', 'w').write('\n'.join(rep) + '\n')
     print('\n'.join(rep))

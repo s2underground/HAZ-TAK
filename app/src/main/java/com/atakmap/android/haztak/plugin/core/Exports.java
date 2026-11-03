@@ -107,6 +107,8 @@ public final class Exports {
                 return "ff006dff";
             case EVACUATION:
                 return "ff00d7ff";
+            case WIND:
+                return "ffffc440";
             default:
                 return "ff006dff";
         }
@@ -135,6 +137,8 @@ public final class Exports {
                 return "protective";
             case EVACUATION:
                 return "evacuation";
+            case WIND:
+                return "wind";
             default:
                 return "downwind";
         }

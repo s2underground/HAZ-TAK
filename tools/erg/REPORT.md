@@ -15,6 +15,7 @@
 - Every Table 2 row matches a Table 1 "(when spilled in water)" row and vice versa.
 - Every guide number referenced by the index exists.
 - Rule quotes checked verbatim against their pages: 19
+- Reference pages: 8; texts checked verbatim against their pages: 309; drawn as outlines (no text layer), checked by eye against the rendered page: "Redo the flowchart once the name of the material or the accurate UN/NA ID number is identified" (how_to_use); "Is the material on fire?" (how_to_use)
 
 ## Problems
 

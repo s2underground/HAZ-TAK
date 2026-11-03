@@ -19,12 +19,14 @@ public final class Drawing {
     }
 
     public enum Role {
-        ISOLATION, PROTECTIVE, EVACUATION, DOWNWIND
+        ISOLATION, PROTECTIVE, EVACUATION, DOWNWIND, WIND
     }
 
     public static final String ISO = ".iso";
     public static final String PAZ = ".paz";
     public static final String DW = ".dw";
+    /** Wind arrow, drawn when the wind is known but nothing else shows it. */
+    public static final String WIND = ".wind";
     /** Evacuation rings: ".ev1", ".ev2", ... */
     public static final String EV = ".ev";
     public static final int MAX_RINGS = 4;
@@ -35,6 +37,7 @@ public final class Drawing {
         out.add(ISO);
         out.add(PAZ);
         out.add(DW);
+        out.add(WIND);
         for (int i = 1; i <= MAX_RINGS; i++)
             out.add(EV + i);
         return Collections.unmodifiableList(out);
@@ -102,6 +105,7 @@ public final class Drawing {
                         Labels.lineTitle(r, z.downwind), 0, new double[][] {
                                 { lat, lon }, Geometry.downwindPoint(lat, lon,
                                         s.windFromDeg, z.downwind.lengthM) }));
+            addWindArrow(out, r, lat, lon, z.isolation.radiusM);
             out.add(new Shape(ISO, Kind.CIRCLE, Role.ISOLATION,
                     Labels.isolationTitle(r, z.isolation), z.isolation.radiusM,
                     null));
@@ -124,9 +128,46 @@ public final class Drawing {
                     + "DOWNWIND EVACUATION " + Formats.measured(r.dwM) + " ("
                     + r.edition + ")", 0, new double[][] { { lat, lon },
                             Geometry.downwindPoint(lat, lon, s.windFromDeg, r.dwM) }));
+        addWindArrow(out, r, lat, lon, r.isoM);
         out.add(new Shape(ISO, Kind.CIRCLE, Role.ISOLATION, pre + "ISOLATE "
                 + Formats.measured(r.isoM) + " ALL DIRECTIONS (" + r.edition + ")",
                 r.isoM, null));
         return out;
+    }
+
+    /** Arrow length as a multiple of the isolation radius, and its bounds. */
+    static final double ARROW_FACTOR = 2.5;
+    static final double ARROW_MIN_M = 150;
+    static final double ARROW_MAX_M = 5000;
+
+    /**
+     * A wind arrow from the spill pointing downwind, only when the wind is
+     * known and neither the protective action square nor the downwind line
+     * already shows the direction. It is a picture of the wind the user
+     * entered, not a distance from the guidebook.
+     */
+    private static void addWindArrow(List<Shape> out, HazRecord r, double lat,
+            double lon, double isoM) {
+        Scenario s = r.scenario;
+        if (!s.hasWind())
+            return;
+        for (Shape sh : out)
+            if (sh.role == Role.PROTECTIVE || sh.role == Role.DOWNWIND)
+                return;
+        out.add(new Shape(WIND, Kind.LINE, Role.WIND, Labels.windTitle(r), 0,
+                windArrow(lat, lon, s.windFromDeg, isoM)));
+    }
+
+    /** Points of the arrow: spill, tip, left barb, tip, right barb. */
+    static double[][] windArrow(double lat, double lon, double windFromDeg,
+            double isoM) {
+        double len = Double.isNaN(isoM) ? ARROW_MIN_M
+                : Math.max(ARROW_MIN_M, Math.min(ARROW_MAX_M, isoM * ARROW_FACTOR));
+        double az = Geometry.downwindAzimuth(windFromDeg);
+        double[] tip = Geo.destination(lat, lon, az, len);
+        double barb = len * 0.18;
+        double[] left = Geo.destination(tip[0], tip[1], az + 180 - 28, barb);
+        double[] right = Geo.destination(tip[0], tip[1], az + 180 + 28, barb);
+        return new double[][] { { lat, lon }, tip, left, tip, right };
     }
 }

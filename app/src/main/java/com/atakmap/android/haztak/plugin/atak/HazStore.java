@@ -56,6 +56,7 @@ public final class HazStore {
     static final String OPAQUE = "opaque-details";
     public static final String MARKER_TYPE = "a-h-G";
 
+    static final int WIND_BLUE = 0xFF40C4FF;
     static final int RED = 0xFFD50000;
     static final int RED_FILL = 0x44D50000;
     static final int ORANGE = 0xFFFF6D00;
@@ -417,6 +418,11 @@ public final class HazStore {
                 case EVACUATION:
                     stroke = YELLOW;
                     fill = YELLOW_FILL;
+                    w = 3;
+                    break;
+                case WIND:
+                    stroke = WIND_BLUE;
+                    fill = 0;
                     w = 3;
                     break;
                 default:

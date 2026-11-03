@@ -84,6 +84,12 @@ public final class Labels {
         return prefix(r) + "LARGE SPILL: DOWNWIND EVACUATION " + l.label;
     }
 
+    public static String windTitle(HazRecord r) {
+        double w = r.scenario.windFromDeg;
+        return prefix(r) + "WIND FROM " + Formats.bearing(w) + ", DOWNWIND "
+                + Formats.compass(w + 180);
+    }
+
     /** Provenance line for the card and the remarks. */
     public static String provenance(HazRecord r) {
         StringBuilder sb = new StringBuilder(r.edition);

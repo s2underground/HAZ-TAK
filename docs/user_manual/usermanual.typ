@@ -4,7 +4,7 @@
 
 #show: userguide.with(
    plugin-name: "HAZ-TAK",
-   plugin-version: "0.1",
+   plugin-version: "0.2",
    platform: "ATAK",
    platform-version: "5.6.0",
 )
@@ -22,7 +22,8 @@ The zones are ordinary ATAK shapes and a marker, so every TAK client sees them, 
 = Getting started
 - Tap the *HAZ-TAK* toolbar button. *Incidents on the map* is at the top.
 - *1. Identify:* *ID number* (the 4 digits on the placard, orange panel or shipping paper), *Name*, *Placard*, or *Unknown* (Guide 111). Green entries are toxic-by-inhalation or water-reactive: they use the green tables. If the exact name isn't known, *Exact name not known* uses every entry with that ID and the largest distances.
-- *2. Situation:* choose the spill size and whether a fire is involved (nothing is pre-selected). For green materials, check day or night (filled in from the sun) and enter the wind direction it blows *FROM*. Table 3 gases also need the container and wind speed; *Not sure* uses the largest.
+- The chosen answer is always shown in teal with a bright border (for example which of two entries for the same ID number you picked).
+- *2. Situation:* one card per question, each marked *REQUIRED*, *ANSWERED* or *OPTIONAL*: spill size, *Is the material on fire?* (nothing is pre-selected), land or water for water-reactive materials, day or night for green materials (filled in from the sun), and the wind direction it blows *FROM*. The wind is required for green materials and optional for the rest. Table 3 gases also need the container and wind speed; *Not sure* uses the largest.
 - *3. Place:* *Tap map*, *My position* or *Map center*, or use the HAZ-TAK button in any marker's radial menu.
 - Press *SEND TO ALL* on the incident card, or *Send to…*.
 ]
@@ -33,6 +34,7 @@ The zones are ordinary ATAK shapes and a marker, so every TAK client sees them, 
 - *Orange square: protective action zone.* Downwind of the spill; its upwind edge passes through the spill and its length and width equal the protective action distance (ERG2024 p. 288). People in this area should be evacuated and/or sheltered-in-place.
 - *Yellow circle: evacuation distance* from the guide (large spill or fire), when larger than the isolation circle.
 - *Orange line: large-spill downwind evacuation* from the guide (drawn when the wind is entered).
+- *Blue arrow: the wind you entered,* pointing downwind, drawn when nothing else shows the direction. It is not a distance. Only green materials get a downwind zone; the guides give the other materials distances in all directions, so their zones are circles.
 - *Fire:* the guide's fire distance becomes the isolation circle and Table 1 still protects downwind for residual release (p. 280).
 - *Whole contents released at once* (terrorism, sabotage, catastrophic failure): tick the box to double the distances (p. 289).
 Every shape is drawn at the larger of the printed metric and US values; labels show the values as printed. "11.0+ km" means the distance can be larger in some conditions.
@@ -55,7 +57,7 @@ Every shape is drawn at the larger of the printed metric and US values; labels s
 - *Export…* saves to `atak/export/HAZ-TAK/` as a data package, KMZ or GPX.
 
 = Reference
-Word for word from ERG2024: 24-hour emergency response numbers, how to use the guidebook and Table 1, factors that may change the distances, protective actions, national response centers, General First Aid.
+Word for word from ERG2024, redrawn for the screen: the flowchart (with buttons into ID / Name / Placard / Unknown), 24-hour emergency response numbers (tap to dial), placards, how to use Table 1 (with the protective action zone figure), factors that may change the distances, evacuate or shelter (table), background on Table 1, national response centers, Table 3, General First Aid. A guide also shows the material's Table 1, 2 and 3 rows as tables.
 ]
 
 #tak-slide[
