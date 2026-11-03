@@ -56,6 +56,7 @@ STATUS
 0.2 (Nov 2026): device-test fixes: clear selected state, one card per
 situation question, reference pages rebuilt as structured text and
 tables, wind always enterable with a wind arrow for circle-only zones.
+0.3 (Nov 2026): new icon (orange HAZ diamond) that new users recognise.
 Planned: 1.1 camera placard reader (photo -> 4-digit ID with Tesseract,
 offline, always confirmed by the user); later rail car / road trailer
 identification, the chemical warfare agent section, Spanish/French text.
