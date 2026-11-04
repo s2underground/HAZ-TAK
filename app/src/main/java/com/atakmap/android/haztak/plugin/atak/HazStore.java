@@ -13,6 +13,8 @@ import com.atakmap.android.haztak.plugin.core.HazRecord;
 import com.atakmap.android.haztak.plugin.core.Labels;
 import com.atakmap.android.haztak.plugin.core.Names;
 import com.atakmap.android.haztak.plugin.core.Zones;
+import com.atakmap.android.maps.MapEvent;
+import com.atakmap.android.maps.MapEventDispatcher;
 import com.atakmap.android.maps.MapGroup;
 import com.atakmap.android.maps.MapItem;
 import com.atakmap.android.maps.MapView;
@@ -85,6 +87,51 @@ public final class HazStore {
                 registry.addAll(saved);
         } catch (RuntimeException e) {
             Log.w(TAG, "registry unreadable", e);
+        }
+        mapView.getMapEventDispatcher().addMapEventListener(MapEvent.ITEM_ADDED,
+                addWatcher);
+    }
+
+    /**
+     * A circle of an incident that arrived before its marker (ATAK imports
+     * CoT in parallel and leaves such a circle unanchored and undrawn): anchor
+     * it as soon as the marker exists. Also covers ATAK's "Send to…", where
+     * HAZ-TAK can't space out the messages.
+     */
+    private final MapEventDispatcher.MapEventDispatchListener addWatcher =
+            new MapEventDispatcher.MapEventDispatchListener() {
+                @Override
+                public void onMapEvent(MapEvent event) {
+                    MapItem it = event.getItem();
+                    if (it == null || !Drawing.isShapeUid(it.getUID())
+                            && !registry.contains(it.getUID()))
+                        return;
+                    final String incident = Drawing.incidentUid(it.getUID());
+                    main.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            anchorCircles(incident);
+                        }
+                    }, ANCHOR_DELAY_MS);
+                }
+            };
+
+    static final long ANCHOR_DELAY_MS = 300;
+
+    /** Attach this incident's circles to its marker if they aren't. */
+    public void anchorCircles(String incidentUid) {
+        try {
+            Marker m = liveMarker(incidentUid);
+            if (m == null)
+                return;
+            for (String sfx : Drawing.allSuffixes()) {
+                MapItem it = liveItem(incidentUid + sfx);
+                if (it instanceof DrawingCircle
+                        && ((DrawingCircle) it).getCenterMarker() != m)
+                    ((DrawingCircle) it).setCenterMarker(m);
+            }
+        } catch (RuntimeException e) {
+            Log.e(TAG, "anchoring circles failed for " + incidentUid, e);
         }
     }
 
@@ -682,6 +729,12 @@ public final class HazStore {
 
     public void dispose() {
         main.removeCallbacksAndMessages(null);
+        try {
+            mapView.getMapEventDispatcher().removeMapEventListener(
+                    MapEvent.ITEM_ADDED, addWatcher);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "listener not removed", e);
+        }
         List<MapItem> items;
         synchronized (watched) {
             items = new ArrayList<>(watched);

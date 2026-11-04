@@ -1,6 +1,8 @@
 package com.atakmap.android.haztak.plugin.atak;
 
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 
 import com.atakmap.android.contact.ContactPresenceDropdown;
 import com.atakmap.android.cot.CotMapComponent;
@@ -23,9 +25,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Sending incidents. The marker always goes first so receivers can anchor
- * the circles to it (ATAK defers a circle until its centre marker exists).
- * (From Blast 1.0.)
+ * Sending incidents. The marker goes first and the shapes a second later,
+ * then once more: receivers import CoT in parallel, and a circle imported
+ * before its centre marker is never drawn by ATAK (see sendToAll).
  */
 public final class Sharing {
 
@@ -45,38 +47,86 @@ public final class Sharing {
      * output (mesh and all TAK server connections). The marker goes first,
      * then its shapes, then forced deletes for the shapes it doesn't draw.
      */
-    public int sendToAll(Marker m) {
-        CotDispatcher d = CotMapComponent.getExternalDispatcher();
-        int n = 0;
-        for (MapItem mi : store.items(m)) {
-            CotEvent ev = CotEventFactory.createCotEvent(mi);
-            if (ev == null || !ev.isValid()) {
-                Log.w(TAG, "no CoT for " + mi.getUID());
-                continue;
-            }
-            d.dispatchToBroadcast(ev);
-            n++;
+    public int sendToAll(final Marker m) {
+        final CotDispatcher d = CotMapComponent.getExternalDispatcher();
+        List<MapItem> items = store.items(m);
+        // 1. The marker alone. Receiving ATAK clients import CoT in parallel,
+        // so a circle sent right behind its marker can be imported first:
+        // ATAK then "defers" it and never anchors or draws it (ATAK only
+        // replays deferred CoT at startup). Seen on the 0.6 release build.
+        CotEvent marker = CotEventFactory.createCotEvent(m);
+        if (marker == null || !marker.isValid()) {
+            Log.w(TAG, "no CoT for marker " + m.getUID());
+            return 0;
         }
-        // Every shape the incident does NOT draw now is removed everywhere
-        // (cheap, idempotent): clients without HAZ-TAK, and clients that
-        // missed an earlier update or got an old square replayed by a TAK
-        // server, drop stale zones. HAZ-TAK receivers never delete an
-        // incident because of a removed shape (HazStore.partRemoved).
-        Map<String, String> now = shapesOf(m, store.read(m));
-        if (now == null)
-            return n; // can't tell what the incident draws: delete nothing
-        for (String sfx : Drawing.allSuffixes()) {
-            String uid = m.getUID() + sfx;
-            if (now.containsKey(uid))
-                continue;
-            try {
-                d.dispatchToBroadcast(deleteEvent(uid, sfx.equals(Drawing.ISO)
+        d.dispatchToBroadcast(marker);
+        final String uid = m.getUID();
+        // 2. The shapes once receivers have created the marker, then the
+        // removals of shapes the incident no longer has.
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                sendShapes(uid, true);
+            }
+        }, SHAPES_AFTER_MS);
+        // 3. The shapes once more: anchors any circle a slow link still
+        // delivered before its marker (a second send fixed it in testing).
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                sendShapes(uid, false);
+            }
+        }, REPEAT_AFTER_MS);
+        return items.size();
+    }
+
+    /** Wait before the shapes, so receivers have imported the marker. */
+    static final long SHAPES_AFTER_MS = 1000;
+    /** Send the shapes a second time after this. */
+    static final long REPEAT_AFTER_MS = 5000;
+
+    private final Handler main = new Handler(Looper.getMainLooper());
+
+    private void sendShapes(String uid, boolean withRemovals) {
+        try {
+            Marker m = store.liveMarker(uid);
+            if (m == null)
+                return; // deleted meanwhile
+            CotDispatcher d = CotMapComponent.getExternalDispatcher();
+            for (MapItem mi : store.items(m)) {
+                if (mi == m)
+                    continue;
+                CotEvent ev = CotEventFactory.createCotEvent(mi);
+                if (ev == null || !ev.isValid()) {
+                    Log.w(TAG, "no CoT for " + mi.getUID());
+                    continue;
+                }
+                d.dispatchToBroadcast(ev);
+            }
+            if (!withRemovals)
+                return;
+            // Every shape the incident does NOT draw now is removed everywhere
+            // (cheap, idempotent): clients without HAZ-TAK, and clients that
+            // missed an earlier update or got an old square replayed by a TAK
+            // server, drop stale zones. HAZ-TAK receivers never delete an
+            // incident because of a removed shape (HazStore.partRemoved).
+            Map<String, String> now = shapesOf(m, store.read(m));
+            if (now == null)
+                return; // can't tell what the incident draws: delete nothing
+            for (String sfx : Drawing.allSuffixes()) {
+                String su = m.getUID() + sfx;
+                if (now.containsKey(su))
+                    continue;
+                d.dispatchToBroadcast(deleteEvent(su, sfx.equals(Drawing.ISO)
                         || sfx.startsWith(Drawing.EV) ? CIRCLE_TYPE : SHAPE_TYPE));
-            } catch (RuntimeException ex) {
-                Log.e(TAG, "stale shape delete failed for " + uid, ex);
             }
+        } catch (RuntimeException e) {
+            Log.e(TAG, "sending shapes failed for " + uid, e);
         }
-        return n;
+    }
+
+    public void dispose() {
+        main.removeCallbacksAndMessages(null);
     }
 
     /** Shapes a record draws for this marker: uid -> CoT type; null if unknown. */

@@ -4,7 +4,7 @@
 
 #show: userguide.with(
    plugin-name: "HAZ-TAK",
-   plugin-version: "0.6",
+   plugin-version: "0.7",
    platform: "ATAK",
    platform-version: "5.6.0",
 )
@@ -57,7 +57,7 @@ Every shape is drawn at the larger of the printed metric and US values; labels s
 
 #tak-slide[
   = Sharing, clearing, deleting, exporting
-- *SEND TO ALL* sends the marker first, then its shapes, then removes any zone it no longer has (so clients without HAZ-TAK don't keep an old square). A receiver with the same ERG edition recomputes the zones from its own data; if the sender's distances differ, the card says so and the receiver's values are drawn. Every device should run the same HAZ-TAK version.
+- *SEND TO ALL* sends the marker first, its zones a second later (and once more a few seconds after, so every device can attach the circles), then removes any zone it no longer has (so clients without HAZ-TAK don't keep an old square). A receiver with the same ERG edition recomputes the zones from its own data; if the sender's distances differ, the card says so and the receiver's values are drawn. Every device should run the same HAZ-TAK version.
 - *Mark cleared* when the incident is over: callsign and Zulu time are logged and the zones turn grey for everyone. It deletes nothing.
 - *Delete* removes the marker and all its zones: *This device only* or *Delete for everyone* (ATAK's remote delete). Deleting the marker with ATAK's own delete removes its zones too; a zone deleted on its own is redrawn while the incident needs it.
 - Anyone can rename the marker or add to its remarks, with or without HAZ-TAK; HAZ-TAK only replaces its own *[HAZ-TAK]* block.

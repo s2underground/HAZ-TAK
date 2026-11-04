@@ -240,6 +240,8 @@ public final class HazTakPlugin implements IPlugin {
             controller = null;
             pane = null;
         }
+        if (sharing != null)
+            sharing.dispose();
         if (store != null)
             store.dispose();
     }

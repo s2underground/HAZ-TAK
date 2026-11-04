@@ -65,6 +65,9 @@ cargo-fire distance, downwind evacuation in the position check, wind
 not known yet, day/night banner, emergency numbers on every screen,
 safer sharing (a lost packet can't delete an incident), and more.
 0.6 (Nov 2026): removed the duplicate main-screen emergency numbers button.
+0.7 (Nov 2026): fixed circles not drawn on the first SEND TO ALL (receivers
+import CoT in parallel; the zones now follow the marker by a second and are
+sent twice; HAZ-TAK receivers attach early circles themselves).
 Planned: 1.1 camera placard reader (photo -> 4-digit ID with Tesseract,
 offline, always confirmed by the user); later rail car / road trailer
 identification, the chemical warfare agent section, Spanish/French text.
