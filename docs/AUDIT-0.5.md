@@ -64,6 +64,17 @@ it was fixed. A fifth review checked the fixes for regressions.
   - The land/water rule quote includes its condition.
   - The position check uses the same ellipsoid as the drawing (up to 30–60 m apart at 11–22 km before).
 
+## Regression review of the fixes
+
+A fifth reviewer checked the 0.5 changes against 0.4. It compared the zones for all 115,632 index, ID-only and guide-only scenarios under the old and new code: the only change is the new 1,609 m ring for Guide 113 with fire. It also found seven smaller slips, all now fixed:
+
+- The card said "This build doesn't have ERG2024" for an incident this build can't compute.
+- Choosing a placard and then typing an ID kept the placard's guide.
+- An out-of-range distance from a sender, or a sender on a newer version, was flagged only until the incident was stored.
+- The quick wind dialog could reset day/night.
+- The day/night banner also appeared when the user had chosen day or night themselves.
+- The "not a direction" wind warning could stay after a valid wind was picked.
+
 ## Decided, not changed
 
 - **Table 1 isolation vs the guide's "immediate precautionary measure".** Example: chlorine, small spill: Table 1 gives 60 m and Guide 124 says "at least 100 meters". The ERG flowchart (p. 1: "USE TABLE 1 for isolation and protective action distances") and the guides' EVACUATION sections (Guide 124: "See Table 1 - Initial Isolation and Protective Action Distances"; Guide 125: "For highlighted materials: see Table 1 …") direct green materials to Table 1, so HAZ-TAK draws the Table 1 value. *To be confirmed by the developer before release.*
@@ -81,4 +92,4 @@ it was fixed. A fifth review checked the fixes for regressions.
 - **Square:** orientation and geometry, and the sun-based day/night threshold (audit 2).
 - **Robustness:** no crash or absurd output from 200,000 fuzzed details; threading and plugin unload; persistence across ATAK restarts; R8 rules; export validity (audit 3).
 
-Tests: 104 unit tests, including new ones for every fix above.
+Tests: 105 unit tests, including new ones for every fix above.

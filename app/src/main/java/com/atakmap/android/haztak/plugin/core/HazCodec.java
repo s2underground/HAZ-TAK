@@ -48,7 +48,8 @@ public final class HazCodec {
     public static Map<String, String> encode(HazRecord r) {
         Scenario s = r.scenario;
         Map<String, String> m = new LinkedHashMap<>();
-        m.put("v", Integer.toString(HazRecord.VERSION));
+        // a newer sender's version is kept, so the warning survives storage
+        m.put("v", Integer.toString(Math.max(r.version, HazRecord.VERSION)));
         m.put("ed", r.edition);
         if (s.byGuideOnly()) {
             m.put("g", s.guide);
@@ -196,13 +197,14 @@ public final class HazCodec {
                         || !HazRecord.Same.metres(dw,
                                 z.downwind == null ? Double.NaN : z.downwind.lengthM)
                         || !HazRecord.Same.list(rings, HazRecord.ringList(z));
+                boolean rejected = a.get("iso_m") != null && Double.isNaN(iso);
                 if (Double.isNaN(iso)) {
-                    // nothing carried: use this build's distances
+                    // nothing usable carried: use this build's distances
                     iso = z.isolation.radiusM;
                     paz = z.paz == null ? Double.NaN : z.paz.downwindM;
                     dw = z.downwind == null ? Double.NaN : z.downwind.lengthM;
                     rings = HazRecord.ringList(z);
-                    mismatch = newer;
+                    mismatch = newer || rejected;
                 }
                 // Otherwise the sender's distances are kept as received, so
                 // HazRecord.disagrees() keeps comparing them with this
@@ -229,6 +231,11 @@ public final class HazCodec {
                     && e.getValue().length() <= 256)
                 extra.put(e.getKey(), e.getValue());
         }
+        // a received isolation distance this build rejected (e.g. 0.5 m or
+        // 60 km): remembered so the warning survives storage
+        if (known && a.get("iso_m") != null && Double.isNaN(metres(a.get("iso_m")))
+                && extra.size() < MAX_ATTRIBUTES)
+            extra.put(HazRecord.REJECTED_ISO, text(a.get("iso_m"), MAX_TEXT));
         int n = parseInt(a.get("n"), 0);
         return new HazRecord(parseInt(a.get("v"), 1), ed, s, label,
                 text(a.get("by"), MAX_TEXT), Formats.parseIso(a.get("t")),

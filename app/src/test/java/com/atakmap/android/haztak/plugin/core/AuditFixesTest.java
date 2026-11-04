@@ -208,4 +208,23 @@ public class AuditFixesTest {
     public void numbersAreMetresFirst() {
         assertEquals("200 m (656 ft)", Formats.measured(200));
     }
+
+    // regression review of 0.5
+    @Test
+    public void rejectedOrNewerSenderStaysFlaggedAfterStorage() {
+        HazRecord r = HazRecord.create(erg, chlorineNoWind().withWindFrom(270), "A", 1L);
+        java.util.Map<String, String> a = HazCodec.encode(r);
+        a.put("iso_m", "0.5");
+        HazRecord got = HazCodec.decode(a, erg);
+        assertTrue(got.disagrees(erg));
+        assertTrue(HazCodec.fromXml(HazCodec.toXml(got), erg).disagrees(erg));
+        // editing on this device replaces the sender's numbers
+        assertFalse(got.updated(erg, got.scenario).disagrees(erg));
+
+        java.util.Map<String, String> b = HazCodec.encode(r);
+        b.put("v", "99");
+        HazRecord newer = HazCodec.decode(b, erg);
+        assertTrue(newer.disagrees(erg));
+        assertTrue(HazCodec.fromXml(HazCodec.toXml(newer), erg).disagrees(erg));
+    }
 }

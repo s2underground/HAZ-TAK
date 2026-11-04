@@ -624,6 +624,9 @@ public final class HazPane {
     }
 
     private void setMode(String m) {
+        if (("ID".equals(m) || "NAME".equals(m)) && scenario.byGuideOnly()
+                && !m.equals(mode))
+            scenario = scenario.unidentified(); // never keep a placard's guide
         mode = m;
         if ("UNKNOWN".equals(m)) {
             Erg.Placard p = erg.placard("unknown");
@@ -1182,6 +1185,7 @@ public final class HazPane {
     }
 
     private void setWindText(double deg) {
+        windInvalid = false;
         updatingWind = true;
         windEdit.setText(Double.isNaN(deg) ? "" : Integer.toString((int) Math.round(deg)));
         updatingWind = false;
@@ -1645,16 +1649,22 @@ public final class HazPane {
             card.addView(text("Shapes are drawn at the larger of the printed metric "
                     + "and US values.", 12, DIM, false));
         } else {
-            card.addView(text("This build doesn't have " + r.edition + ". Showing "
-                    + "the distances the sender drew: isolate "
+            card.addView(text((r.editionKnown(erg)
+                    ? "This build can't compute this incident (it may come from a "
+                            + "newer HAZ-TAK). "
+                    : "This build doesn't have " + r.edition + ". ")
+                    + "Showing the distances the sender drew: isolate "
                     + Formats.measured(r.isoM) + (Double.isNaN(r.pazM) ? ""
                             : "; protect downwind " + Formats.measured(r.pazM))
                     + ".", 12, AMBER, false));
         }
         if (r.disagrees(erg))
-            card.addView(text("The sender's distances differ from this build's "
-                    + "ERG data. This build's distances are drawn. Check with the "
-                    + "sender.", 12, RED, false));
+            card.addView(text(z != null
+                    ? "The sender's distances differ from this build's ERG data. "
+                            + "This build's distances are drawn. Check with the "
+                            + "sender; every device should run the same HAZ-TAK version."
+                    : "Check with the sender: every device should run the same "
+                            + "HAZ-TAK version.", 12, RED, false));
 
         todBanner = vertical();
         todBanner.setBackgroundColor(0xFF3E2E00);
@@ -1869,7 +1879,8 @@ public final class HazPane {
             GeoPoint center) {
         if (todBanner == null)
             return;
-        Scenario.TimeOfDay now = r.scenario.tod == null || z == null
+        Scenario.TimeOfDay now = r.scenario.tod == null || !r.scenario.todFromSun
+                || z == null
                 || !z.tableApplies || r.isCleared() || center == null ? null
                         : Sun.timeOfDay(center.getLatitude(), center.getLongitude(),
                                 System.currentTimeMillis());
@@ -1918,7 +1929,11 @@ public final class HazPane {
         GeoPoint center = m.getPoint();
         GeoPoint sp = selfPoint();
         if (z == null || center == null) {
-            youText.setText("");
+            youText.setText(z == null ? "YOU: no position check for an incident "
+                    + "this build can't compute. Use the distances above." : "");
+            youText.setTextColor(AMBER);
+            if (teamText != null)
+                teamText.setText("");
             return;
         }
         double wind = r.scenario.windFromDeg;
@@ -2342,7 +2357,8 @@ public final class HazPane {
                 Scenario s = (cur != null ? cur.scenario : r.scenario).withWindFrom(w);
                 Scenario.TimeOfDay tod = night.isChecked() ? Scenario.TimeOfDay.NIGHT
                         : Scenario.TimeOfDay.DAY;
-                if (s.tod != null && tod != s.tod)
+                // only if the user changed the box (compared with what it showed)
+                if (r.scenario.tod != null && tod != r.scenario.tod && s.tod != null)
                     s = s.withTimeOfDay(tod, false);
                 applyChange(m, s, which == DialogInterface.BUTTON_POSITIVE);
             }

@@ -131,11 +131,13 @@ public final class HazRecord {
         Zones z = Zones.compute(erg, s);
         if (!z.usable())
             throw new IllegalArgumentException("zones not usable: " + z.missing);
+        Map<String, String> x = new LinkedHashMap<>(extra);
+        x.remove(REJECTED_ISO); // this device's distances replace the sender's
         return new HazRecord(version, edition, s, labelFor(erg, s), byCallsign,
                 timeMillis, status, clearedBy, clearedMillis, number,
                 z.isolation.radiusM, z.paz == null ? Double.NaN : z.paz.downwindM,
                 z.downwind == null ? Double.NaN : z.downwind.lengthM,
-                ringList(z), extra, false);
+                ringList(z), x, false);
     }
 
     /**
@@ -144,6 +146,8 @@ public final class HazRecord {
      * and re-send them unchanged.
      */
     public static final String EDITED_BY = "eby";
+    /** A received isolation distance that was out of range (kept as text). */
+    public static final String REJECTED_ISO = "rxiso";
     public static final String EDITED_AT = "et";
     static final int MAX_EDITOR = 64;
 
@@ -198,7 +202,7 @@ public final class HazRecord {
 
     /** True if the carried distances differ from this build's computation. */
     public boolean disagrees(Erg erg) {
-        if (receivedMismatch)
+        if (receivedMismatch || extra.containsKey(REJECTED_ISO))
             return true;
         Zones z = zones(erg);
         if (z == null)
