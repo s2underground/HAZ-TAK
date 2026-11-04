@@ -4,7 +4,7 @@
 
 #show: userguide.with(
    plugin-name: "HAZ-TAK",
-   plugin-version: "0.3",
+   plugin-version: "0.4",
    platform: "ATAK",
    platform-version: "5.6.0",
 )
@@ -44,7 +44,9 @@ Every shape is drawn at the larger of the printed metric and US values; labels s
 - *YOU:* your distance from the spill, upwind or downwind, and the zone you are in; a warning when you are within GPS error of an edge.
 - *Team:* how many contacts are in each zone.
 - *Guidebook rules that apply*, quoted with page numbers.
+- Tap an incident in the list to open its card; tap it again (or *Hide*) to close it.
 - *Wind or time changed…* recomputes and redraws the zones.
+- *Edit incident* opens the incident in the new-incident form: change the material or any answer, then *Save and send to all* (or this device only). The marker stays put; the card records who edited it and when. If someone else changed it while you were editing, HAZ-TAK asks before overwriting.
 - *View guide*, *Rename…*, *Export…*, *Mark cleared / Reopen*, *Delete…*.
 ]
 

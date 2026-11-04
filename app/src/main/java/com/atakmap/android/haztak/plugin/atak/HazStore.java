@@ -553,6 +553,8 @@ public final class HazStore {
     // so the item must still be missing after a short wait.
 
     static final long GONE_CHECK_MS = 750;
+    /** Extra wait before a removed shape deletes the whole incident. */
+    static final long SHAPE_GRACE_MS = 3000;
     static final long MOVE_REDRAW_MS = 300;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -616,13 +618,51 @@ public final class HazStore {
                 try {
                     if (expectedRemovals.contains(uid))
                         return;
-                    if (liveItem(uid) == null)
-                        deleteIncident(Drawing.incidentUid(uid));
+                    if (liveItem(uid) != null)
+                        return;
+                    final String incident = Drawing.incidentUid(uid);
+                    if (incident.equals(uid)) {
+                        deleteIncident(incident); // the marker itself
+                        return;
+                    }
+                    if (!stillWanted(incident, uid))
+                        return; // another device's edit removed it: not a delete
+                    // Still drawn by this device's copy of the record. Wait
+                    // longer in case the edited marker that drops this shape
+                    // is still on its way, then decide.
+                    main.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                if (liveItem(uid) == null && !expectedRemovals.contains(uid)
+                                        && stillWanted(incident, uid))
+                                    deleteIncident(incident);
+                            } catch (RuntimeException e) {
+                                Log.e(TAG, "incident cleanup failed for " + uid, e);
+                            }
+                        }
+                    }, SHAPE_GRACE_MS);
                 } catch (RuntimeException e) {
                     Log.e(TAG, "incident cleanup failed for " + uid, e);
                 }
             }
         }, GONE_CHECK_MS);
+    }
+
+    /** Does the live incident's current record still draw this shape? */
+    private boolean stillWanted(String incidentUid, String shapeUid) {
+        Marker m = liveMarker(incidentUid);
+        if (m == null)
+            return true; // marker gone too: the incident is being deleted
+        HazRecord r = read(m);
+        GeoPoint c = m.getPoint();
+        if (r == null || c == null || !c.isValid())
+            return true;
+        for (Drawing.Shape s : Drawing.shapes(r, r.zones(erg), c.getLatitude(),
+                c.getLongitude()))
+            if (shapeUid.equals(incidentUid + s.suffix))
+                return true;
+        return false;
     }
 
     public void dispose() {

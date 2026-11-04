@@ -19,6 +19,9 @@ import android.text.Spanned;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -39,6 +42,7 @@ import com.atakmap.android.haztak.plugin.atak.Sharing;
 import com.atakmap.android.haztak.plugin.core.Erg;
 import com.atakmap.android.haztak.plugin.core.Formats;
 import com.atakmap.android.haztak.plugin.core.Geo;
+import com.atakmap.android.haztak.plugin.core.HazCodec;
 import com.atakmap.android.haztak.plugin.core.HazRecord;
 import com.atakmap.android.haztak.plugin.core.Labels;
 import com.atakmap.android.haztak.plugin.core.Names;
@@ -136,6 +140,13 @@ public final class HazPane {
     /** ID / name result buttons: {Button, Erg.Entry} or {Button, null, id}. */
     private final List<Object[]> resultButtons = new ArrayList<>();
     private final List<Button> windButtons = new ArrayList<>();
+    // editing an existing incident in the new-incident form
+    private String editingUid;
+    private HazRecord editBase; // the incident when editing started
+    private String prefillText;
+    private TextView editBanner, step1Header, step2Header, step3Header;
+    private LinearLayout placeBox, editBox;
+    private Button saveSendBtn, saveLocalBtn;
     private String containerGas;
     private CheckBox doubleBox;
     private TextView preview;
@@ -229,6 +240,8 @@ public final class HazPane {
 
     public void placeAt(Marker target) {
         closeSub();
+        if (editingUid != null)
+            resetNew();
         placeTarget = target;
         updateSituation();
         onShow();
@@ -239,6 +252,10 @@ public final class HazPane {
     public void resetNew() {
         scenario = Scenario.empty();
         mode = null;
+        editingUid = null;
+        editBase = null;
+        prefillText = null;
+        updateEditUi();
         if (windEdit != null) {
             updatingWind = true;
             windEdit.setText("");
@@ -415,7 +432,15 @@ public final class HazPane {
     // New incident: identify
 
     private void buildNewIncident(LinearLayout col) {
-        col.addView(header("NEW INCIDENT: 1. IDENTIFY"));
+        editBanner = text("", 13, AMBER, true);
+        editBanner.setPadding(dp(8), dp(6), dp(8), dp(6));
+        editBanner.setBackgroundColor(0xFF3E2E00);
+        editBanner.setVisibility(View.GONE);
+        LinearLayout.LayoutParams bl = full();
+        bl.setMargins(0, dp(10), 0, 0);
+        col.addView(editBanner, bl);
+        step1Header = header("NEW INCIDENT: 1. IDENTIFY");
+        col.addView(step1Header);
         LinearLayout modes = horizontal();
         String[][] ms = { { "ID", "ID number" }, { "NAME", "Name" },
                 { "PLACARD", "Placard" }, { "UNKNOWN", "Unknown" } };
@@ -452,8 +477,7 @@ public final class HazPane {
         clearBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Scenario keep = scenario;
-                scenario = Scenario.empty().withDoubled(keep.doubled);
+                scenario = scenario.unidentified(); // situation answers stay
                 updateSituation();
             }
         });
@@ -465,7 +489,12 @@ public final class HazPane {
         col.addView(situation);
         buildSituation(situation);
 
-        col.addView(header("NEW INCIDENT: 3. PLACE"));
+        step3Header = header("NEW INCIDENT: 3. PLACE");
+        col.addView(step3Header);
+        LinearLayout outer = col;
+        placeBox = vertical();
+        outer.addView(placeBox);
+        col = placeBox;
         targetBtn = button("", SEND);
         targetBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -521,7 +550,41 @@ public final class HazPane {
             }
         });
         col.addView(auto);
+        col = outer;
+
+        editBox = vertical();
+        editBox.setVisibility(View.GONE);
+        saveSendBtn = button("Save and send to all", SEND);
+        saveSendBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        saveSendBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                saveEdit(true);
+            }
+        });
+        editBox.addView(saveSendBtn, full());
+        LinearLayout eb = horizontal();
+        saveLocalBtn = button("Save on this device only", BTN);
+        saveLocalBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                saveEdit(false);
+            }
+        });
+        Button cancel = button("Cancel edit", BTN);
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Marker m = editingUid == null ? null : store.liveMarker(editingUid);
+                exitEdit(m);
+            }
+        });
+        eb.addView(saveLocalBtn, weight());
+        eb.addView(cancel, weight());
+        editBox.addView(eb);
+        col.addView(editBox);
         buildIdentifyBody();
+        updateEditUi();
         updateSituation();
     }
 
@@ -564,6 +627,7 @@ public final class HazPane {
                 });
                 identifyBody.addView(e, full());
                 identifyBody.addView(results);
+                prefill(e);
                 break;
             }
             case "NAME": {
@@ -577,6 +641,7 @@ public final class HazPane {
                 });
                 identifyBody.addView(e, full());
                 identifyBody.addView(results);
+                prefill(e);
                 break;
             }
             case "PLACARD": {
@@ -724,9 +789,11 @@ public final class HazPane {
 
     /** Day or night from the sun at the user's position (or map centre). */
     private void prefillTimeOfDay() {
-        if (scenario.tod != null && !scenario.todFromSun)
-            return; // the user chose: keep it
-        GeoPoint ref = referencePoint();
+        if (scenario.tod != null && (!scenario.todFromSun || editingUid != null))
+            return; // the user chose (or the incident being edited has it): keep it
+        Marker editing = editingUid == null ? null : store.liveMarker(editingUid);
+        GeoPoint ref = editing != null && editing.getPoint() != null
+                && editing.getPoint().isValid() ? editing.getPoint() : referencePoint();
         if (ref == null)
             return;
         scenario = scenario.withTimeOfDay(Sun.timeOfDay(ref.getLatitude(),
@@ -805,7 +872,8 @@ public final class HazPane {
     }
 
     private void buildSituation(LinearLayout col) {
-        col.addView(header("NEW INCIDENT: 2. SITUATION (answer each question)"));
+        step2Header = header("NEW INCIDENT: 2. SITUATION (answer each question)");
+        col.addView(step2Header);
 
         qSpill = question(col, "How much was released?",
                 "Small or large spill (ERG2024 p. 288).");
@@ -1212,6 +1280,12 @@ public final class HazPane {
 
     private void updatePlacement() {
         boolean ok = erg != null && zones != null && zones.usable();
+        for (Button b : new Button[] { saveSendBtn, saveLocalBtn }) {
+            if (b != null) {
+                b.setEnabled(ok);
+                b.setAlpha(ok ? 1f : 0.4f);
+            }
+        }
         for (Button b : new Button[] { pickBtn, selfBtn, centerBtn }) {
             if (b != null) {
                 b.setEnabled(ok);
@@ -1377,7 +1451,22 @@ public final class HazPane {
         }
         final Zones z = r.zones(erg);
         incidentCard.setVisibility(View.VISIBLE);
-        incidentCard.addView(header("SELECTED INCIDENT"));
+        LinearLayout head = horizontal();
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(header("SELECTED INCIDENT"), weight());
+        Button hide = button("Hide ▲", BTN);
+        hide.setMinWidth(dp(64));
+        hide.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                selectedUid = null;
+                listSignature = null;
+                cardSignature = null;
+                refresh();
+            }
+        });
+        head.addView(hide);
+        incidentCard.addView(head);
         LinearLayout card = vertical();
         card.setBackgroundColor(CARD);
         int p = dp(8);
@@ -1484,6 +1573,14 @@ public final class HazPane {
         a2.addView(guide, weight());
         a2.addView(changed, weight());
         card.addView(a2);
+        Button edit = button("Edit incident (material, spill, fire, wind…)", BTN);
+        edit.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startEdit(m);
+            }
+        });
+        card.addView(edit, full());
 
         LinearLayout a3 = horizontal();
         Button ren = button("Rename…", BTN);
@@ -1705,8 +1802,8 @@ public final class HazPane {
             sl.setMargins(0, 0, dp(6), 0);
             row.addView(sw, sl);
             String where = Double.isNaN(d) ? "" : "\n" + Formats.measured(d);
-            TextView t = text(ATAKUtilities.getDisplayName(m) + where, 14,
-                    r.isCleared() ? DIM : TEXT, sel);
+            TextView t = text((sel ? "▾ " : "▸ ") + ATAKUtilities.getDisplayName(m)
+                    + where, 14, r.isCleared() ? DIM : TEXT, sel);
             row.addView(t, weight());
             Button go = button("Go to", BTN);
             go.setMinWidth(dp(56));
@@ -1730,7 +1827,8 @@ public final class HazPane {
             View.OnClickListener select = new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    selectedUid = m.getUID();
+                    // tap again to collapse the card
+                    selectedUid = m.getUID().equals(selectedUid) ? null : m.getUID();
                     listSignature = null;
                     cardSignature = null;
                     refresh();
@@ -1767,6 +1865,168 @@ public final class HazPane {
         return l;
     }
 
+    // ------------------------------------------------------------------
+    // Editing an incident: the new-incident form, filled in from it
+
+    private void startEdit(Marker card) {
+        Marker m = live(card);
+        HazRecord r = m == null ? null : store.read(m);
+        if (r == null)
+            return;
+        if (!r.editionKnown(erg)) {
+            toast("This build doesn't have " + r.edition + ", so it can't edit "
+                    + "this incident.");
+            return;
+        }
+        closeSub();
+        placeTarget = null;
+        stopPick();
+        editingUid = m.getUID();
+        editBase = r;
+        scenario = r.scenario;
+        Scenario s = r.scenario;
+        if (s.byGuideOnly()) {
+            if (s.placardKey != null)
+                mode = "unknown".equals(s.placardKey) ? "UNKNOWN" : "PLACARD";
+            else {
+                mode = "NAME"; // explosives rows: identified by name, no ID
+                prefillText = s.name;
+            }
+        } else {
+            mode = "ID";
+            prefillText = s.id;
+        }
+        setWindText(s.windFromDeg);
+        doubleBox.setChecked(s.doubled);
+        scenario = r.scenario; // the checkbox listener must not change it
+        containerGas = null;
+        buildIdentifyBody();
+        updateEditUi();
+        updateSituation();
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (newSection != null)
+                    root.smoothScrollTo(0, Math.max(0, newSection.getTop() - dp(8)));
+            }
+        }, 50);
+    }
+
+    private void prefill(EditText e) {
+        if (prefillText == null)
+            return;
+        String t = prefillText;
+        prefillText = null;
+        e.setText(t); // runs the search, so the chosen entry shows selected
+    }
+
+    private void updateEditUi() {
+        if (step1Header == null)
+            return;
+        Marker m = editingUid == null ? null : store.liveMarker(editingUid);
+        boolean editing = m != null;
+        String name = editing ? ATAKUtilities.getDisplayName(m) : "";
+        step1Header.setText(editing ? "EDITING " + name + ": 1. IDENTIFY"
+                : "NEW INCIDENT: 1. IDENTIFY");
+        step2Header.setText(editing ? "EDITING " + name + ": 2. SITUATION"
+                : "NEW INCIDENT: 2. SITUATION (answer each question)");
+        step3Header.setText(editing ? "EDITING " + name + ": 3. SAVE"
+                : "NEW INCIDENT: 3. PLACE");
+        editBanner.setVisibility(editing ? View.VISIBLE : View.GONE);
+        editBanner.setText("Editing " + name + ". Change any answer below, then "
+                + "save. The marker stays where it is (drag it on the map to "
+                + "move it). Cancel leaves the incident unchanged.");
+        placeBox.setVisibility(editing ? View.GONE : View.VISIBLE);
+        editBox.setVisibility(editing ? View.VISIBLE : View.GONE);
+    }
+
+    private void saveEdit(final boolean send) {
+        final Marker m = editingUid == null ? null : store.liveMarker(editingUid);
+        if (m == null) {
+            toast("The incident was deleted while you were editing.");
+            resetNew();
+            return;
+        }
+        HazRecord cur = store.read(m);
+        if (cur == null)
+            return;
+        if (editBase != null && !HazCodec.encode(editBase).equals(HazCodec.encode(cur))) {
+            String who = cur.wasEdited() && !cur.editedBy().isEmpty()
+                    ? " (last edit by " + cur.editedBy() + (cur.editedMillis() > 0
+                            ? " " + Formats.dtg(cur.editedMillis()) : "") + ")" : "";
+            new AlertDialog.Builder(mapView.getContext())
+                    .setTitle("Changed while you were editing")
+                    .setMessage(ATAKUtilities.getDisplayName(m) + " was changed"
+                            + who + " after you started editing. Save your "
+                            + "version anyway? It replaces the other version"
+                            + (send ? " for everyone." : " on this device."))
+                    .setPositiveButton("Save mine", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            commitEdit(m, send);
+                        }
+                    })
+                    .setNeutralButton("Keep theirs", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            exitEdit(m);
+                        }
+                    })
+                    .setNegativeButton("Back", null).show();
+            return;
+        }
+        commitEdit(m, send);
+    }
+
+    private void commitEdit(Marker card, boolean send) {
+        try {
+            Marker m = live(card);
+            HazRecord cur = m == null ? null : store.read(m);
+            if (cur == null) {
+                toast("The incident was deleted while you were editing.");
+                resetNew();
+                return;
+            }
+            Zones z = Zones.compute(erg, scenario);
+            if (!z.usable()) {
+                toast("Not saved: " + (z.missing.isEmpty() ? "no zones"
+                        : z.missing.get(0).prompt));
+                return;
+            }
+            HazRecord next = cur.updated(erg, scenario).edited(callsign(),
+                    System.currentTimeMillis());
+            // A default name follows the material; a name someone typed stays.
+            String shown = Names.base(ATAKUtilities.getDisplayName(m));
+            int n = cur.number > 0 ? cur.number : Names.numberIn(shown);
+            boolean defaultName = n > 0 && shown.equals(Names.initial(n, cur.label));
+            if (!store.write(m, next)) {
+                toast("Could not save the changes.");
+                return;
+            }
+            if (defaultName && !next.label.equals(cur.label))
+                store.rename(m, Names.initial(n, next.label));
+            if (send)
+                sharing.sendToAll(m, cur);
+            toast(send ? "Changes saved and sent to everyone."
+                    : "Changes saved on this device. Use SEND TO ALL to share them.");
+            exitEdit(m);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "edit failed", e);
+            toast("Could not save the changes.");
+        }
+    }
+
+    /** Leave edit mode, back to an empty new-incident form, card open. */
+    private void exitEdit(Marker m) {
+        resetNew();
+        if (m != null)
+            selectedUid = m.getUID();
+        cardSignature = null;
+        listSignature = null;
+        refresh();
+        scrollTop();
+    }
+
     private void promptChange(Marker card) {
         final Marker m = live(card);
         if (m == null)
@@ -1784,6 +2044,8 @@ public final class HazPane {
         final EditText wind = new EditText(ctx);
         wind.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         wind.setHint("Wind FROM, degrees (e.g. 270)");
+        wind.setSingleLine(true);
+        doneKey(wind);
         if (r.scenario.hasWind())
             wind.setText(Long.toString(Math.round(r.scenario.windFromDeg)));
         box.addView(wind);
@@ -1827,12 +2089,13 @@ public final class HazPane {
                         : z.missing.get(0).prompt));
                 return;
             }
-            if (!store.write(m, r.updated(erg, s))) {
+            if (!store.write(m, r.updated(erg, s).edited(callsign(),
+                    System.currentTimeMillis()))) {
                 live(null);
                 return;
             }
             if (send)
-                sharing.sendToAll(m);
+                sharing.sendToAll(m, r);
             cardSignature = null;
             listSignature = null;
             refresh();
@@ -1974,6 +2237,7 @@ public final class HazPane {
             return;
         final EditText input = new EditText(mapView.getContext());
         input.setSingleLine(true);
+        doneKey(input);
         input.setText(Names.base(HazStore.nameOf(m)));
         input.setSelectAllOnFocus(true);
         input.setFilters(new android.text.InputFilter[] {
@@ -2448,7 +2712,42 @@ public final class HazPane {
         e.setTextColor(TEXT);
         e.setHintTextColor(DIM);
         e.setSingleLine(true);
+        doneKey(e);
         return e;
+    }
+
+    /**
+     * Always "Done" on the keyboard (never "Next", which the keyboard would
+     * otherwise pick whenever another text box is on screen), and Done
+     * closes the keyboard.
+     */
+    private void doneKey(final EditText e) {
+        e.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        e.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView v, int action, KeyEvent ev) {
+                if (action == EditorInfo.IME_ACTION_DONE
+                        || action == EditorInfo.IME_ACTION_NEXT
+                        || action == EditorInfo.IME_NULL) {
+                    hideKeyboard(e);
+                    return true;
+                }
+                return false;
+            }
+        });
+    }
+
+    private void hideKeyboard(View v) {
+        try {
+            InputMethodManager imm = (InputMethodManager) mapView.getContext()
+                    .getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null)
+                imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+            v.clearFocus();
+        } catch (RuntimeException ex) {
+            Log.w(TAG, "keyboard", ex);
+        }
     }
 
     private Button button(String label, int color) {

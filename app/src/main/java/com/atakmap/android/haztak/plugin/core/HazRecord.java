@@ -123,17 +123,56 @@ public final class HazRecord {
     }
 
     /**
-     * The same incident with changed situation inputs (e.g. the wind
-     * shifted). Distances are recomputed; who placed it and when stay.
+     * The same incident with changed inputs (the wind shifted, or an edit
+     * of the material or situation). Distances and the material label are
+     * recomputed; who placed it, when, its number and its status stay.
      */
     public HazRecord updated(Erg erg, Scenario s) {
         Zones z = Zones.compute(erg, s);
         if (!z.usable())
             throw new IllegalArgumentException("zones not usable: " + z.missing);
-        return with(s, status, clearedBy, clearedMillis, number,
+        return new HazRecord(version, edition, s, labelFor(erg, s), byCallsign,
+                timeMillis, status, clearedBy, clearedMillis, number,
                 z.isolation.radiusM, z.paz == null ? Double.NaN : z.paz.downwindM,
                 z.downwind == null ? Double.NaN : z.downwind.lengthM,
-                ringList(z));
+                ringList(z), extra, false);
+    }
+
+    /**
+     * Edit trail: who last changed the incident's inputs and when. Carried
+     * as ordinary extra attributes ("eby", "et"), so older HAZ-TAK builds keep
+     * and re-send them unchanged.
+     */
+    public static final String EDITED_BY = "eby";
+    public static final String EDITED_AT = "et";
+    static final int MAX_EDITOR = 64;
+
+    public HazRecord edited(String by, long when) {
+        Map<String, String> x = new LinkedHashMap<>(extra);
+        String b = by == null ? "" : by.trim();
+        if (b.length() > MAX_EDITOR)
+            b = b.substring(0, MAX_EDITOR);
+        x.put(EDITED_BY, b);
+        x.put(EDITED_AT, Formats.iso(when));
+        return new HazRecord(version, edition, scenario, label, byCallsign,
+                timeMillis, status, clearedBy, clearedMillis, number, isoM, pazM,
+                dwM, ringsM, x, receivedMismatch);
+    }
+
+    /** Callsign of the last editor, or "" if never edited. */
+    public String editedBy() {
+        String b = extra.get(EDITED_BY);
+        return b == null ? "" : b;
+    }
+
+    /** Time of the last edit, or -1. */
+    public long editedMillis() {
+        String t = extra.get(EDITED_AT);
+        return t == null ? -1 : Formats.parseIso(t);
+    }
+
+    public boolean wasEdited() {
+        return extra.containsKey(EDITED_AT);
     }
 
     public boolean isCleared() {

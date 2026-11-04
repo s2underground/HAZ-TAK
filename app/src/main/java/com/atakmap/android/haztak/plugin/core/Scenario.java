@@ -99,6 +99,15 @@ public final class Scenario {
                 todFromSun, windFromDeg, null, null, null, doubled);
     }
 
+    /**
+     * Not identified any more (the user tapped Change); the situation
+     * answers that don't depend on the material stay.
+     */
+    public Scenario unidentified() {
+        return new Scenario("", null, null, null, spill, fire, tod, todFromSun,
+                windFromDeg, null, null, null, doubled);
+    }
+
     public Scenario withSpill(Spill s) {
         return new Scenario(id, name, guide, placardKey, s, fire, tod,
                 todFromSun, windFromDeg, water, container, windSpeed, doubled);

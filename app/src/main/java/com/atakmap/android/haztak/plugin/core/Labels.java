@@ -98,6 +98,13 @@ public final class Labels {
         if (r.timeMillis > 0)
             sb.append(' ').append(Formats.dtg(r.timeMillis));
         sb.append('.');
+        if (r.wasEdited()) {
+            sb.append(" Edited by ")
+                    .append(r.editedBy().isEmpty() ? "unknown" : r.editedBy());
+            if (r.editedMillis() > 0)
+                sb.append(' ').append(Formats.dtg(r.editedMillis()));
+            sb.append('.');
+        }
         if (r.isCleared()) {
             sb.append(" CLEARED by ")
                     .append(r.clearedBy.isEmpty() ? "unknown" : r.clearedBy);
