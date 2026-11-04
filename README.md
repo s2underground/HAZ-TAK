@@ -29,14 +29,19 @@ Argentina):
     (p. 289).
 - Nothing is pre-selected: spill size and fire are chosen for every
   incident; day/night is filled in from the sun (sunrise to sunset) and
-  can be changed; the wind direction is entered by the user.
+  can be changed; the wind direction is entered by the user. If the wind
+  isn't known yet, the isolation circle can be placed now, labelled
+  "protective action zone not drawn" until the wind is entered.
 - Every drawn distance is the larger of the printed metric and US values;
   nothing is interpolated or reduced. Labels show the values as printed.
 - Incident list (Go to, Delete), incident card with where you are
-  (isolation zone, protective action zone, outside; upwind or downwind),
-  team counts, the guidebook rules that applied (quoted with page), and
-  provenance (edition, table, page, who placed it, when).
-- Send to everyone or chosen contacts, mark cleared (logged), update the
+  (isolation zone, protective action zone, evacuation distance, outside
+  the drawn distances; upwind or downwind), team counts, what each zone
+  means, the guidebook rules that applied (quoted with page), a banner
+  when it has turned day or night at the incident, and provenance
+  (edition, table, page, who placed it, when, who last edited it).
+- Send to everyone or chosen contacts, edit the incident (material and
+  every answer, with a conflict check), mark cleared (logged), update the
   wind or day/night, rename, export as ATAK data package, KMZ or GPX,
   delete locally or for everyone.
 - Reference pages word for word, redrawn for the screen: the flowchart,
@@ -68,6 +73,7 @@ safer sharing (a lost packet can't delete an incident), and more.
 0.7 (Nov 2026): fixed circles not drawn on the first SEND TO ALL (receivers
 import CoT in parallel; the zones now follow the marker by a second and are
 sent twice; HAZ-TAK receivers attach early circles themselves).
+1.0 (Nov 2026): first public release (same code as 0.7).
 Planned: 1.1 camera placard reader (photo -> 4-digit ID with Tesseract,
 offline, always confirmed by the user); later rail car / road trailer
 identification, the chemical warfare agent section, Spanish/French text.
@@ -103,8 +109,8 @@ For the 5.5.1 developer build of ATAK, build with
 Unit tests (`./gradlew testCivDebugUnitTest`) pin the dataset to the
 printed guidebook (values with page numbers), check its consistency, and
 test every rule used to choose distances, the protective action square,
-the sun calculation (against PyEphem), the CoT detail (including fuzzing)
-and the exports. One test computes the zones for every material in the
+the sun calculation (against PyEphem), the CoT detail (including random
+and malformed input) and the exports. One test computes the zones for every material in the
 index.
 
 _________________________________________________________________
@@ -135,20 +141,26 @@ DEVELOPER NOTES
   detail), Drawing (the shapes, shared by map and exports), Labels,
   Names, PositionCheck, Exports.
 - atak/: HazStore (marker + shapes with UIDs <marker>.iso, .paz, .dw,
-  .ev1..; circles anchored to the marker, square and line redrawn when it
-  moves), HazDetailHandler, HazMenuHandler (radial button), Sharing,
-  Exporter.
+  .wind, .ev1..; circles anchored to the marker, square and lines redrawn
+  when it moves; a removed shape is redrawn while the incident needs it,
+  only deleting the marker deletes the incident), HazDetailHandler,
+  HazMenuHandler (radial button), Sharing (marker first, shapes 1 s later
+  and again after 5 s, because receivers import CoT in parallel and ATAK
+  never draws a circle that arrives before its centre marker; then forced
+  deletes for shapes the incident no longer draws), Exporter.
 - ui/: HazPane (built in code), PlacardIcon (original drawings).
 - CoT detail:
   <__haztak v="1" ed="ERG2024" id="1017" mat="Chlorine" spill="L"
    fire="0" tod="N" tods="sun" wf="270" cont="Rail tank car" ws="MODERATE"
    x2="0" iso_m="1000" paz_m="9012.3" lbl="UN1017 Chlorine" by="CALLSIGN"
    t="..." st="ACTIVE|CLEARED" n="3"/>
-  Guide-only incidents carry g (and pl for a placard) instead of id. A
-  receiver with the same edition recomputes the zones from its own data
-  and flags any difference; unknown attributes are kept and re-sent.
-- Incident lifecycle (liveness, registry, whole-incident delete, remarks
-  merge, radial icon) follows Blast 1.0.
+  Guide-only incidents carry g (and pl for a placard) instead of id;
+  wl="1" means the wind isn't known yet; eby/et record the last edit. A
+  receiver with the same edition recomputes the zones from its own data,
+  keeps the sender's distances and flags any difference; unknown
+  attributes are kept and re-sent.
+- Incident lifecycle (liveness, registry, remarks merge, radial icon)
+  follows Blast 1.0. docs/AUDIT-0.5.md is the pre-release audit.
 
 _________________________________________________________________
 ACKNOWLEDGMENTS

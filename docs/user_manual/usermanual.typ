@@ -4,7 +4,7 @@
 
 #show: userguide.with(
    plugin-name: "HAZ-TAK",
-   plugin-version: "0.7",
+   plugin-version: "1.0",
    platform: "ATAK",
    platform-version: "5.6.0",
 )
