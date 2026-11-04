@@ -64,6 +64,7 @@ always shows Done.
 cargo-fire distance, downwind evacuation in the position check, wind
 not known yet, day/night banner, emergency numbers on every screen,
 safer sharing (a lost packet can't delete an incident), and more.
+0.6 (Nov 2026): removed the duplicate main-screen emergency numbers button.
 Planned: 1.1 camera placard reader (photo -> 4-digit ID with Tesseract,
 offline, always confirmed by the user); later rail car / road trailer
 identification, the chemical warfare agent section, Spanish/French text.

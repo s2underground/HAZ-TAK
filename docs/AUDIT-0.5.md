@@ -52,7 +52,7 @@ it was fixed. A fifth review checked the fixes for regressions.
 - **"Wind not known yet"** places the isolation circle for a green material straight away. It is labelled "PROTECTIVE ACTION ZONE NOT DRAWN: WIND UNKNOWN" on every device and in the remarks, and the card has an "Enter the wind direction now" button. Before, nothing could be placed until the wind was known.
 - **Spill size.** The ERG's examples are now shown (a drum is a small spill, a large package or many small packages a large one), and there is a "Not sure: use large" button.
 - **Table 3** wind speeds are shown in km/h and mph, and "Not sure" says it uses the largest values.
-- **Emergency numbers.** A red "Emergency numbers" button is on every screen. Each number on the phone pages has its own large call button, and there is a 911 button marked as HAZ-TAK's addition.
+- **Emergency numbers.** A red "Emergency numbers" button sits next to Back on every guide and reference screen; on the main screen the red button under Reference is the way in (0.6: the extra main-screen button was removed as a duplicate). Each number on the phone pages has its own large call button, and there is a 911 button marked as HAZ-TAK's addition.
 - **Names.** A misspelled name gets "Did you mean". A 2- or 3-digit number gets a hint that it is the hazard code from the top half of an orange panel, not the ID number.
 - **Guide 140 fire.** A note says the 1,600 m ammonium-nitrate fire distance is applied to every Guide 140 material, as a conservative choice.
 - **Other smaller changes:**
@@ -77,7 +77,7 @@ A fifth reviewer checked the 0.5 changes against 0.4. It compared the zones for 
 
 ## Decided, not changed
 
-- **Table 1 isolation vs the guide's "immediate precautionary measure".** Example: chlorine, small spill: Table 1 gives 60 m and Guide 124 says "at least 100 meters". The ERG flowchart (p. 1: "USE TABLE 1 for isolation and protective action distances") and the guides' EVACUATION sections (Guide 124: "See Table 1 - Initial Isolation and Protective Action Distances"; Guide 125: "For highlighted materials: see Table 1 …") direct green materials to Table 1, so HAZ-TAK draws the Table 1 value. *To be confirmed by the developer before release.*
+- **Table 1 isolation vs the guide's "immediate precautionary measure".** Example: chlorine, small spill: Table 1 gives 60 m and Guide 124 says "at least 100 meters". The ERG flowchart (p. 1: "USE TABLE 1 for isolation and protective action distances") and the guides' EVACUATION sections (Guide 124: "See Table 1 - Initial Isolation and Protective Action Distances"; Guide 125: "For highlighted materials: see Table 1 …") direct green materials to Table 1, so HAZ-TAK draws the Table 1 value. *Confirmed by the developer (Nov 4, 2026): the guidebook's Table 1 is the authority.*
 - **Ignored on purpose, all acceptable for initial response:**
   - "P" (polymerization) is information only.
   - Guide 114's 15 m for 1.4S packages is smaller than what is drawn.

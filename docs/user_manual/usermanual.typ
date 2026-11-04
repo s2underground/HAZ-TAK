@@ -4,7 +4,7 @@
 
 #show: userguide.with(
    plugin-name: "HAZ-TAK",
-   plugin-version: "0.5",
+   plugin-version: "0.6",
    platform: "ATAK",
    platform-version: "5.6.0",
 )
@@ -20,7 +20,7 @@ HAZ-TAK puts the *2024 Emergency Response Guidebook* (ERG2024) inside ATAK. Iden
 The zones are ordinary ATAK shapes and a marker, so every TAK client sees them, with or without HAZ-TAK. HAZ-TAK works fully offline. The guidebook is for the *initial phase* of a transportation incident.
 ]
 = Getting started
-- Tap the *HAZ-TAK* toolbar button. *Incidents on the map* is at the top. The red *Emergency numbers* button is on every screen.
+- Tap the *HAZ-TAK* toolbar button. *Incidents on the map* is at the top. The 24-hour emergency numbers are the red button under *Reference*; guide and reference screens also have an *Emergency numbers* button next to *Back*.
 - More than one hazardous material involved? Don't use the flowchart: call the emergency response number now (ERG2024 p. 1).
 - *1. Identify:* *ID number* (the 4 digits on the placard, orange panel or shipping paper; on an orange panel it's the bottom number), *Name* (shipping name; a misspelling gets *Did you mean*), *Placard*, or *Unknown* (Guide 111). Tap the matching material; changing the number or name clears the choice. Green entries are toxic-by-inhalation or water-reactive: they use the green tables. If the exact name isn't known, *Exact name not known* uses every entry with that ID and the largest distances.
 - The chosen answer is always shown in teal with a bright border (for example which of two entries for the same ID number you picked).

@@ -358,7 +358,6 @@ public final class HazPane {
         statusText.setText("2024 Emergency Response Guidebook (ERG2024), "
                 + "U.S. DOT PHMSA / Transport Canada / SCT / CIQUIME. "
                 + "Initial response only.");
-        col.addView(emergencyButton(), full());
 
         LinearLayout listHead = horizontal();
         incidentHeader = header("INCIDENTS ON THE MAP");
