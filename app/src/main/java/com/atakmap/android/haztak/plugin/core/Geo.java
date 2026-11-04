@@ -87,6 +87,24 @@ public final class Geo {
     /** Vincenty inverse; NaN if it doesn't converge. */
     static double vincenty(double lat1, double lon1, double lat2,
             double lon2) {
+        return inverse(lat1, lon1, lat2, lon2)[0];
+    }
+
+    /**
+     * Initial azimuth (degrees, 0-360) from point 1 to point 2 on WGS84, the
+     * same ellipsoid {@link #destination} uses, so a point placed with
+     * destination(azimuth, distance) reads back the same azimuth. Falls back
+     * to the spherical bearing where Vincenty doesn't converge.
+     */
+    public static double azimuth(double lat1, double lon1, double lat2,
+            double lon2) {
+        double a = inverse(lat1, lon1, lat2, lon2)[1];
+        return Double.isNaN(a) ? bearing(lat1, lon1, lat2, lon2) : a;
+    }
+
+    /** {distance m, initial azimuth deg}; NaNs if it doesn't converge. */
+    static double[] inverse(double lat1, double lon1, double lat2,
+            double lon2) {
         double l = Math.toRadians(lon2 - lon1);
         double u1 = Math.atan((1 - F) * Math.tan(Math.toRadians(lat1)));
         double u2 = Math.atan((1 - F) * Math.tan(Math.toRadians(lat2)));
@@ -101,7 +119,7 @@ public final class Geo {
                     + (cosU1 * sinU2 - sinU1 * cosU2 * cosL)
                             * (cosU1 * sinU2 - sinU1 * cosU2 * cosL));
             if (sinSigma == 0)
-                return 0;
+                return new double[] { 0, Double.NaN };
             cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosL;
             sigma = Math.atan2(sinSigma, cosSigma);
             double sinAlpha = cosU1 * cosU2 * sinL / sinSigma;
@@ -114,7 +132,7 @@ public final class Geo {
                     * (cos2SigmaM + c * cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM)));
         } while (Math.abs(lambda - lambdaP) > 1e-12 && ++guard < 200);
         if (guard >= 200)
-            return Double.NaN;
+            return new double[] { Double.NaN, Double.NaN };
         double u2b = cos2Alpha * (A * A - B * B) / (B * B);
         double bigA = 1 + u2b / 16384 * (4096 + u2b * (-768 + u2b * (320 - 175 * u2b)));
         double bigB = u2b / 1024 * (256 + u2b * (-128 + u2b * (74 - 47 * u2b)));
@@ -122,7 +140,10 @@ public final class Geo {
                 * (cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM)
                         - bigB / 6 * cos2SigmaM * (-3 + 4 * sinSigma * sinSigma)
                                 * (-3 + 4 * cos2SigmaM * cos2SigmaM)));
-        return B * bigA * (sigma - dSigma);
+        double sinL = Math.sin(lambda), cosL = Math.cos(lambda);
+        double az = Math.toDegrees(Math.atan2(cosU2 * sinL,
+                cosU1 * sinU2 - sinU1 * cosU2 * cosL));
+        return new double[] { B * bigA * (sigma - dSigma), (az + 360.0) % 360.0 };
     }
 
     /**

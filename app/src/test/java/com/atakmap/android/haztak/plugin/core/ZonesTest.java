@@ -243,7 +243,9 @@ public class ZonesTest {
         assertTrue(z.usable());
         assertEquals(Arrays.asList("115", "128"), z.guides);
         assertEquals("100 meters (330 feet)", z.isolation.label);
-        assertTrue(z.rules.contains("unknown_name"));
+        // the p. 288 rule is about Table 1; for guides it's HAZ-TAK's note
+        assertFalse(z.rules.contains("unknown_name"));
+        assertTrue(z.notes.toString().contains("Name not known"));
     }
 
     @Test

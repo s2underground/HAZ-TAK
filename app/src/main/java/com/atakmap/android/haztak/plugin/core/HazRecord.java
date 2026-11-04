@@ -203,6 +203,8 @@ public final class HazRecord {
         Zones z = zones(erg);
         if (z == null)
             return editionKnown(erg); // known edition but inputs unusable
+        if (Double.isNaN(isoM))
+            return false;
         return !Same.metres(isoM, z.isolation.radiusM)
                 || !Same.metres(pazM, z.paz == null ? Double.NaN : z.paz.downwindM)
                 || !Same.metres(dwM, z.downwind == null ? Double.NaN

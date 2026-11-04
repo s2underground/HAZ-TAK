@@ -95,6 +95,8 @@ public final class Xml {
                     sb.append("&apos;");
                     break;
                 default:
+                    if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+                        break; // not allowed in XML 1.0 at all: drop it
                     if (c < 0x20)
                         sb.append("&#").append((int) c).append(';');
                     else

@@ -78,7 +78,7 @@ public class TextTest {
         assertEquals("0° (N)", Formats.bearing(360));
         assertEquals("NNE", Formats.compass(20));
         assertEquals("1,000", Formats.thousands(1000));
-        assertEquals("164 ft (50 m)", Formats.measured(50));
-        assertEquals("7.0 mi (11.3 km)", Formats.measured(7 * Units.M_PER_MI));
+        assertEquals("50 m (164 ft)", Formats.measured(50));
+        assertEquals("11.3 km (7.0 mi)", Formats.measured(7 * Units.M_PER_MI));
     }
 }

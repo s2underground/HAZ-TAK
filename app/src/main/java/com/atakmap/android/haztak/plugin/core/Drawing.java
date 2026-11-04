@@ -107,8 +107,9 @@ public final class Drawing {
                                         s.windFromDeg, z.downwind.lengthM) }));
             addWindArrow(out, r, lat, lon, z.isolation.radiusM);
             out.add(new Shape(ISO, Kind.CIRCLE, Role.ISOLATION,
-                    Labels.isolationTitle(r, z.isolation), z.isolation.radiusM,
-                    null));
+                    Labels.isolationTitle(r, z.isolation) + notDrawn(s,
+                            z.paz != null, z.downwind != null),
+                    z.isolation.radiusM, null));
             return out;
         }
         String pre = r.isCleared() ? "CLEARED " : "";
@@ -130,9 +131,22 @@ public final class Drawing {
                             Geometry.downwindPoint(lat, lon, s.windFromDeg, r.dwM) }));
         addWindArrow(out, r, lat, lon, r.isoM);
         out.add(new Shape(ISO, Kind.CIRCLE, Role.ISOLATION, pre + "ISOLATE "
-                + Formats.measured(r.isoM) + " ALL DIRECTIONS (" + r.edition + ")",
+                + Formats.measured(r.isoM) + " ALL DIRECTIONS (" + r.edition + ")"
+                + notDrawn(s, !Double.isNaN(r.pazM), !Double.isNaN(r.dwM)),
                 r.isoM, null));
         return out;
+    }
+
+    /**
+     * Added to the isolation circle's title when a downwind zone exists but
+     * can't be drawn yet, so every client (with or without HAZ-TAK) sees
+     * that the circle is not the whole answer.
+     */
+    static String notDrawn(Scenario s, boolean square, boolean line) {
+        if (s.hasWind() || !(square || line))
+            return "";
+        return square ? " - PROTECTIVE ACTION ZONE NOT DRAWN: WIND UNKNOWN"
+                : " - DOWNWIND EVACUATION NOT DRAWN: WIND UNKNOWN";
     }
 
     /** Arrow length as a multiple of the isolation radius, and its bounds. */

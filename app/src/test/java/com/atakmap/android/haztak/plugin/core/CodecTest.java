@@ -41,8 +41,8 @@ public class CodecTest {
         assertEquals("ALPHA-1", back.byCallsign);
         assertEquals(1793484000000L, back.timeMillis);
         assertEquals(3, back.number);
-        assertEquals(r.isoM, back.isoM, 1e-9);
-        assertEquals(r.pazM, back.pazM, 1e-9);
+        assertEquals(r.isoM, back.isoM, 0.05); // carried at 0.1 m
+        assertEquals(r.pazM, back.pazM, 0.05);
         assertFalse(back.receivedMismatch);
         assertFalse(back.disagrees(erg));
         assertEquals("UN1017 Chlorine", back.label);
@@ -88,8 +88,42 @@ public class CodecTest {
         HazRecord r = HazCodec.decode(a, erg);
         assertTrue(r.receivedMismatch);
         assertTrue(r.disagrees(erg));
-        assertEquals(1000, r.isoM, 1e-9);      // this build's value is drawn
-        assertTrue(r.pazM > 9000);
+        assertEquals(10, r.isoM, 1e-9);        // the sender's value is kept...
+        assertEquals(1000, r.zones(erg).isolation.radiusM, 1e-9); // ...this build's is drawn
+        assertTrue(r.zones(erg).paz.downwindM > 9000);
+        // audit: the warning must survive being stored and read back
+        HazRecord stored = HazCodec.fromXml(HazCodec.toXml(r), erg);
+        assertTrue(stored.disagrees(erg));
+        assertEquals(1000, Drawing.shapes(stored, stored.zones(erg), 0, 0)
+                .get(Drawing.shapes(stored, stored.zones(erg), 0, 0).size() - 1)
+                .radiusM, 1e-9);
+    }
+
+    @Test
+    public void newerOrUnknownNameDrawsTheSendersDistances() {
+        Map<String, String> a = HazCodec.encode(chlorine());
+        a.put("mat", "Chlorine (a name a newer edition might use)");
+        HazRecord r = HazCodec.decode(a, erg);
+        assertNotNull(r); // not ignored: the old record would stay on the map
+        assertNull(r.zones(erg));
+        assertTrue(r.disagrees(erg));
+        assertEquals(1000, r.isoM, 0.05);
+    }
+
+    @Test
+    public void absurdDistancesFromAnUnknownEditionAreRefused() {
+        Map<String, String> a = HazCodec.encode(chlorine());
+        a.put("ed", "ERG2024b");
+        a.put("iso_m", "50000");
+        assertNull(HazCodec.decode(a, erg));
+        a.put("iso_m", "0.01");
+        assertNull(HazCodec.decode(a, erg));
+    }
+
+    @Test
+    public void controlCharactersAreDroppedFromXml() {
+        assertEquals("AB", Xml.escape("A\u0001B"));
+        assertEquals("A&#10;B", Xml.escape("A\nB"));
     }
 
     @Test

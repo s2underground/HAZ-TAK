@@ -61,14 +61,30 @@ public final class Zones {
         public final String label;   // printed distance, e.g. "60 m (200 ft)"
         public final String cite;    // "ERG2024 Table 1, p. 290"
         public final String text;    // the guide sentence, when from a guide
+        public final boolean atLeast;   // the guide says "at least"
+        public final boolean evacuate;  // isolate AND evacuate (same distance)
+        public final boolean responders; // evacuation includes emergency responders
 
         Circle(String title, double radiusM, String label, String cite,
                 String text) {
+            this(title, radiusM, label, cite, text, false, false, false);
+        }
+
+        Circle(String title, double radiusM, String label, String cite,
+                String text, boolean atLeast, boolean evacuate, boolean responders) {
             this.title = title;
             this.radiusM = radiusM;
             this.label = label;
             this.cite = cite;
             this.text = text;
+            this.atLeast = atLeast;
+            this.evacuate = evacuate;
+            this.responders = responders;
+        }
+
+        Circle alsoEvacuate(Erg.GuideDistance fe) {
+            return new Circle(title, radiusM, label, cite, text, atLeast, true,
+                    responders || fe.responders());
         }
     }
 
@@ -93,12 +109,15 @@ public final class Zones {
         public final String label;
         public final String cite;
         public final String text;
+        public final boolean atLeast;
 
-        Line(double lengthM, String label, String cite, String text) {
+        Line(double lengthM, String label, String cite, String text,
+                boolean atLeast) {
             this.lengthM = lengthM;
             this.label = label;
             this.cite = cite;
             this.text = text;
+            this.atLeast = atLeast;
         }
     }
 
@@ -224,9 +243,14 @@ public final class Zones {
                 rows.addAll(wet);
             }
         }
-        if (waterRelevant && s.water == Scenario.Water.UNKNOWN)
+        if (waterRelevant && s.water == Scenario.Water.UNKNOWN) {
             rules.add("land_water_larger");
+            rules.add("land_water_unclear");
+        }
         boolean table = !rows.isEmpty();
+        if (!table && rules.remove("unknown_name"))
+            notes.add("Name not known: HAZ-TAK uses the largest distances of "
+                    + "the guides listed for this ID number.");
         if (waterOnlyOnLand && !table)
             rules.add("water_only_entry");
 
@@ -239,7 +263,7 @@ public final class Zones {
         if (table) {
             if (s.tod == null)
                 missing.add(Need.TIME_OF_DAY);
-            if (!s.hasWind())
+            if (!s.hasWind() && !s.windLater)
                 missing.add(Need.WIND_DIRECTION);
             if (useT3) {
                 if (s.container == null)
@@ -342,16 +366,8 @@ public final class Zones {
             if (s.spill == Scenario.Spill.LARGE)
                 rules.add("more_than_one_package");
             if (s.fire == Boolean.TRUE) {
-                Erg.GuideDistance fi = largest(erg, guides, "Fire", "isolate");
-                if (fi != null && fi.radiusM() * k > iso.radiusM) {
-                    iso = new Circle("Isolation (fire)", fi.radiusM() * k,
-                            fi.label() + x2, guideCite(erg, guides, fi), fi.text);
-                }
-                Erg.GuideDistance fe = largest(erg, guides, "Fire", "evacuate");
-                if (fe != null && fe.radiusM() * k > iso.radiusM + 0.5)
-                    rings.add(new Circle("Fire: initial evacuation",
-                            fe.radiusM() * k, fe.label() + x2,
-                            guideCite(erg, guides, fe), fe.text));
+                iso = fire(erg, guides, k, x2, iso, rings);
+                fireNote(erg, guides, notes);
                 rules.add("yellow_fire");
                 rules.add("fire_rule");
             }
@@ -367,18 +383,14 @@ public final class Zones {
             }
             iso = new Circle("Isolation (immediate precautionary measure)",
                     im.radiusM() * k, im.label() + x2, guideCite(erg, guides, im),
-                    im.text);
+                    im.text, im.atLeast(), false, false);
             if (s.fire == Boolean.TRUE) {
-                Erg.GuideDistance fi = largest(erg, guides, "Fire", "isolate");
-                if (fi != null && fi.radiusM() * k > iso.radiusM)
-                    iso = new Circle("Isolation (fire)", fi.radiusM() * k,
-                            fi.label() + x2, guideCite(erg, guides, fi), fi.text);
-                Erg.GuideDistance fe = largest(erg, guides, "Fire", "evacuate");
-                if (fe != null && fe.radiusM() * k > iso.radiusM + 0.5)
-                    rings.add(new Circle("Fire: initial evacuation",
-                            fe.radiusM() * k, fe.label() + x2,
-                            guideCite(erg, guides, fe), fe.text));
+                iso = fire(erg, guides, k, x2, iso, rings);
+                fireNote(erg, guides, notes);
             }
+            String downwindNote = downwindNote(erg, guides);
+            if (downwindNote != null)
+                notes.add(downwindNote);
             if (s.spill == Scenario.Spill.LARGE) {
                 Erg.GuideDistance le = null, ld = null;
                 for (String g : guides) {
@@ -397,10 +409,11 @@ public final class Zones {
                 if (le != null && le.radiusM() * k > iso.radiusM + 0.5)
                     rings.add(new Circle("Large spill: initial evacuation",
                             le.radiusM() * k, le.label() + x2,
-                            guideCite(erg, guides, le), le.text));
+                            guideCite(erg, guides, le), le.text, le.atLeast(),
+                            false, le.responders()));
                 if (ld != null)
                     dwLine = new Line(ld.radiusM() * k, ld.label() + x2,
-                            guideCite(erg, guides, ld), ld.text);
+                            guideCite(erg, guides, ld), ld.text, ld.atLeast());
             }
         }
         if (s.doubled)
@@ -413,6 +426,10 @@ public final class Zones {
             }
         });
         boolean needsWind = paz != null || dwLine != null;
+        if (paz != null && !s.hasWind())
+            notes.add("PROTECTIVE ACTION ZONE NOT DRAWN: the wind direction "
+                    + "isn't known yet. Enter it as soon as you can; the zone "
+                    + "extends " + paz.label + " downwind of the spill.");
         if (dwLine != null && !s.hasWind())
             notes.add("Enter the wind direction to draw the downwind "
                     + "evacuation distance on the map.");
@@ -453,11 +470,70 @@ public final class Zones {
             Erg.GuideDistance d) {
         for (String g : guides) {
             Erg.Guide gd = erg.guide(g);
-            if (gd != null && gd.distances.contains(d))
-                return erg.edition + " Guide " + gd.number + ", EVACUATION ("
-                        + d.sub + "), p. " + gd.page;
+            if (gd != null && gd.distances.contains(d)) {
+                boolean second = "EMERGENCY RESPONSE".equals(d.section);
+                return erg.edition + " Guide " + gd.number + ", " + d.section
+                        + (second ? " (cargo fire)" : " (" + d.sub + ")") + ", p. "
+                        + (second ? gd.page + 1 : gd.page);
+            }
         }
         return erg.edition;
+    }
+
+    /**
+     * Fire: the guide's fire isolation replaces a smaller isolation; the
+     * largest fire evacuation becomes a ring when larger, or is folded into
+     * the isolation circle ("isolate and evacuate") when the same.
+     */
+    private static Circle fire(Erg erg, Set<String> guides, double k, String x2,
+            Circle iso, List<Circle> rings) {
+        Erg.GuideDistance fi = largest(erg, guides, "Fire", "isolate");
+        if (fi != null && fi.radiusM() * k > iso.radiusM)
+            iso = new Circle("Isolation (fire)", fi.radiusM() * k,
+                    fi.label() + x2, guideCite(erg, guides, fi), fi.text,
+                    fi.atLeast(), false, false);
+        Erg.GuideDistance fe = largest(erg, guides, "Fire", "evacuate");
+        if (fe != null) {
+            double r = fe.radiusM() * k;
+            if (r > iso.radiusM + 0.5)
+                rings.add(new Circle(fe.clearArea()
+                        ? "Fire reaches cargo: clear the area"
+                        : "Fire: initial evacuation", r, fe.label() + x2,
+                        guideCite(erg, guides, fe), fe.text, fe.atLeast(), false,
+                        fe.responders()));
+            else if (r >= iso.radiusM - 0.5)
+                iso = iso.alsoEvacuate(fe);
+        }
+        return iso;
+    }
+
+    /** A note when the largest fire distance is for a specific product only. */
+    private static void fireNote(Erg erg, Set<String> guides, List<String> notes) {
+        Erg.GuideDistance fe = largest(erg, guides, "Fire", "evacuate");
+        if (fe != null && fe.text.contains("ammonium nitrate"))
+            notes.add("Fire: HAZ-TAK uses the guide's distance for ammonium "
+                    + "nitrate products (the largest fire distance in the guide), "
+                    + "a conservative choice for any material on this guide.");
+    }
+
+    /**
+     * The guide's own sentence telling responders to increase the distance
+     * downwind (22 guides), shown as a note for materials drawn as circles.
+     */
+    private static String downwindNote(Erg erg, Set<String> guides) {
+        for (String g : guides) {
+            Erg.Guide gd = erg.guide(g);
+            if (gd == null)
+                continue;
+            for (Erg.Block b : gd.blocks) {
+                String t = b.html.replaceAll("<[^>]+>", "");
+                if (t.toLowerCase(java.util.Locale.US).contains(
+                        "increase the immediate precautionary measure distance, in the downwind direction"))
+                    return "Guide " + gd.number + ": \"" + t + "\" (" + erg.edition
+                            + " p. " + gd.page + ")";
+            }
+        }
+        return null;
     }
 
     private static List<String> dedupe(List<String> in) {

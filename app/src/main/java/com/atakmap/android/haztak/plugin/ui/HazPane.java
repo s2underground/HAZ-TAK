@@ -144,6 +144,10 @@ public final class HazPane {
     private String editingUid;
     private HazRecord editBase; // the incident when editing started
     private String prefillText;
+    private EditText nameBox;
+    private Button windLaterBtn;
+    private TextView placeHint;
+    private boolean windInvalid;
     private TextView editBanner, step1Header, step2Header, step3Header;
     private LinearLayout placeBox, editBox;
     private Button saveSendBtn, saveLocalBtn;
@@ -161,7 +165,11 @@ public final class HazPane {
     private Marker placeTarget;
     private String selectedUid;
     private String cardSignature, listSignature;
-    private TextView youText, teamText;
+    private TextView youText, teamText, sentText, todBannerText;
+    private LinearLayout todBanner;
+    private Button todBannerBtn;
+    /** Incidents placed on this device and not yet sent (this session). */
+    private final java.util.Set<String> unsent = new java.util.HashSet<>();
     private boolean picking;
     private MapEventDispatcher.MapEventDispatchListener pickListener;
     private boolean ticking;
@@ -350,6 +358,7 @@ public final class HazPane {
         statusText.setText("2024 Emergency Response Guidebook (ERG2024), "
                 + "U.S. DOT PHMSA / Transport Canada / SCT / CIQUIME. "
                 + "Initial response only.");
+        col.addView(emergencyButton(), full());
 
         LinearLayout listHead = horizontal();
         incidentHeader = header("INCIDENTS ON THE MAP");
@@ -421,7 +430,7 @@ public final class HazPane {
         TextView foot = text("HAZ-TAK shows the ERG2024 guides and distances; it "
                 + "does not replace training, shipping papers, the emergency "
                 + "response numbers, or technical specialists. The guidebook is "
-                + "for the initial phase of a transportation incident.", 11, DIM,
+                + "for the initial phase of a transportation incident.", 13, DIM,
                 false);
         foot.setPadding(0, dp(12), 0, dp(4));
         col.addView(foot);
@@ -441,6 +450,16 @@ public final class HazPane {
         col.addView(editBanner, bl);
         step1Header = header("NEW INCIDENT: 1. IDENTIFY");
         col.addView(step1Header);
+        Erg.Rule multi = erg.rule("multi_material_warning");
+        if (multi != null) {
+            LinearLayout warn = vertical();
+            warn.setBackgroundColor(0xFF3E1414);
+            warn.setPadding(dp(8), dp(6), dp(8), dp(6));
+            warn.addView(text("“" + multi.text + "” Immediately call the emergency "
+                    + "response number (" + multi.cite(erg.edition) + ").", 13, TEXT,
+                    false));
+            col.addView(warn, lp(2, 4));
+        }
         LinearLayout modes = horizontal();
         String[][] ms = { { "ID", "ID number" }, { "NAME", "Name" },
                 { "PLACARD", "Placard" }, { "UNKNOWN", "Unknown" } };
@@ -506,7 +525,7 @@ public final class HazPane {
         col.addView(targetBtn, full());
         LinearLayout place = horizontal();
         pickBtn = button("Tap map", BTN);
-        selfBtn = button("My position", BTN);
+        selfBtn = button("Spill is at my position", BTN);
         centerBtn = button("Map center", BTN);
         pickBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -520,11 +539,25 @@ public final class HazPane {
         selfBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                GeoPoint gp = selfPoint();
-                if (gp == null)
+                final GeoPoint gp = selfPoint();
+                if (gp == null) {
                     toast("No GPS position yet.");
-                else
-                    place(gp);
+                    return;
+                }
+                new AlertDialog.Builder(mapView.getContext())
+                        .setTitle("Are you at the spill?")
+                        .setMessage("This puts the spill where you are standing. "
+                                + "If you are back at a safe distance (upwind), use "
+                                + "Tap map and tap the spill itself instead, or the "
+                                + "zones will be drawn in the wrong place.")
+                        .setPositiveButton("Yes, place it here",
+                                new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface d, int w) {
+                                        place(gp);
+                                    }
+                                })
+                        .setNegativeButton("Cancel", null).show();
             }
         });
         centerBtn.setOnClickListener(new View.OnClickListener() {
@@ -539,6 +572,8 @@ public final class HazPane {
         place.addView(selfBtn, weight());
         place.addView(centerBtn, weight());
         col.addView(place);
+        placeHint = text("", 13, AMBER, false);
+        col.addView(placeHint);
         CheckBox auto = new CheckBox(plugin);
         auto.setText("Send new incidents to everyone right away");
         auto.setTextColor(TEXT);
@@ -633,6 +668,7 @@ public final class HazPane {
             case "NAME": {
                 final EditText e = edit("Name of material (2+ letters)",
                         InputType.TYPE_CLASS_TEXT);
+                nameBox = e;
                 e.addTextChangedListener(new Watcher() {
                     @Override
                     public void afterTextChanged(Editable s) {
@@ -647,7 +683,11 @@ public final class HazPane {
             case "PLACARD": {
                 for (String line : erg.placardIntro.subList(0, 1))
                     identifyBody.addView(text(line, 12, AMBER, true));
-                identifyBody.addView(text(erg.placardIntro.get(5), 12, DIM, false));
+                identifyBody.addView(text(erg.placardIntro.get(5), 13, DIM, false));
+                identifyBody.addView(text("The placard drawings and descriptions are "
+                        + "HAZ-TAK's; the guide numbers are from " + erg.edition
+                        + " pp. 8-9. Several placards: use the guide with the larger "
+                        + "distances.", 12, DIM, false));
                 List<Erg.Placard> ps = erg.placards;
                 for (int i = 0; i < ps.size(); i += 3) {
                     LinearLayout line = horizontal();
@@ -688,8 +728,19 @@ public final class HazPane {
         results.removeAllViews();
         resultButtons.clear();
         final String id = Search.cleanId(typed);
-        if (id == null)
+        // the selection follows what is typed: never keep an old material
+        if (!scenario.byGuideOnly() && scenario.identified() && !scenario.id.equals(id)) {
+            scenario = scenario.unidentified();
+            updateSituation();
+        }
+        String digits = typed.replaceAll("[^0-9]", "");
+        if (id == null) {
+            if (digits.length() >= 2 && digits.length() <= 3)
+                results.addView(text("An orange panel has two numbers: the top one "
+                        + "(2-3 digits) is a hazard code, not the ID. Enter the 4-digit "
+                        + "number from the bottom half.", 13, AMBER, false));
             return;
+        }
         List<Erg.Entry> es = Search.byId(erg, id);
         if (es.isEmpty()) {
             results.addView(text("UN/NA " + id + " is not listed in ERG2024. Check "
@@ -697,6 +748,9 @@ public final class HazPane {
                     + "Unknown (Guide 111).", 13, AMBER, false));
             return;
         }
+        results.addView(text(es.size() == 1 ? "Tap the material to select it:"
+                : "Tap the one that matches the shipping paper or label:", 13, BLUE,
+                false));
         for (final Erg.Entry e : es)
             results.addView(entryButton(e), full());
         if (es.size() > 1) {
@@ -716,12 +770,44 @@ public final class HazPane {
         restyleResults();
     }
 
-    private void showNameResults(LinearLayout results, String typed) {
+    private void showNameResults(final LinearLayout results, String typed) {
         results.removeAllViews();
         resultButtons.clear();
         List<Erg.Entry> es = Search.byName(erg, typed);
-        if (typed.trim().length() >= 2 && es.isEmpty())
-            results.addView(text("No match.", 13, DIM, false));
+        // the selection follows what is typed
+        if (scenario.identified() && scenario.name != null) {
+            boolean still = false;
+            for (Erg.Entry e : es)
+                still |= chosen(e);
+            if (!still) {
+                scenario = scenario.unidentified();
+                updateSituation();
+            }
+        }
+        if (typed.trim().length() >= 2 && es.isEmpty()) {
+            results.addView(text("No match. The guidebook lists shipping names "
+                    + "(e.g. \"Hydrogen sulfide\", not \"H2S\"). If nothing fits, "
+                    + "use the ID number, the placard, or Unknown (Guide 111).", 13,
+                    AMBER, false));
+            List<String> sug = Search.suggest(erg, typed, 5);
+            if (!sug.isEmpty()) {
+                results.addView(text("Did you mean:", 13, BLUE, false));
+                for (final String name : sug) {
+                    Button b = button(name, BTN);
+                    b.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+                    b.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            if (nameBox != null)
+                                nameBox.setText(name);
+                        }
+                    });
+                    results.addView(b, full());
+                }
+            }
+        } else if (!es.isEmpty()) {
+            results.addView(text("Tap the material that matches:", 13, BLUE, false));
+        }
         int shown = 0;
         for (Erg.Entry e : es) {
             if (shown++ >= 30) {
@@ -876,7 +962,9 @@ public final class HazPane {
         col.addView(step2Header);
 
         qSpill = question(col, "How much was released?",
-                "Small or large spill (ERG2024 p. 288).");
+                "Small: a single small package (for example, a drum), a small "
+                        + "cylinder, or a small leak from a large package. Large: a "
+                        + "large package, or many small packages (ERG2024 p. 288).");
         LinearLayout spill = horizontal();
         smallBtn = button("Small spill\n208 L (55 US gal) or less", BTN);
         largeBtn = button("Large spill\nmore than 208 L (55 US gal)", BTN);
@@ -897,6 +985,16 @@ public final class HazPane {
         spill.addView(smallBtn, weight());
         spill.addView(largeBtn, weight());
         qSpill.card.addView(spill);
+        Button spillUnsure = button("Not sure: use large spill (larger distances)", BTN);
+        spillUnsure.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                scenario = scenario.withSpill(Scenario.Spill.LARGE);
+                toast("Using LARGE spill distances (the larger ones).");
+                updateSituation();
+            }
+        });
+        qSpill.card.addView(spillUnsure, full());
 
         qFire = question(col, "Is the material on fire?",
                 "Fire changes which distances apply (ERG2024 flowchart, p. 1).");
@@ -965,7 +1063,7 @@ public final class HazPane {
         t.addView(dayBtn, weight());
         t.addView(nightBtn, weight());
         todRow.addView(t);
-        todNote = text("", 11, DIM, false);
+        todNote = text("", 13, DIM, false);
         todRow.addView(todNote);
 
         qWind = question(col, "Which way is the wind blowing FROM?", null);
@@ -981,6 +1079,7 @@ public final class HazPane {
                 if (updatingWind)
                     return;
                 double d = parseWind(s.toString());
+                windInvalid = Double.isNaN(d) && !s.toString().trim().isEmpty();
                 scenario = scenario.withWindFrom(d);
                 updateSituation();
             }
@@ -1018,7 +1117,18 @@ public final class HazPane {
         }
         windRow.addView(c1);
         windRow.addView(c2);
-        windNote = text("", 11, DIM, false);
+        windLaterBtn = button("Wind not known yet: place the isolation circle now", BTN);
+        windLaterBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setWindText(Double.NaN);
+                scenario = scenario.withWindFrom(Double.NaN)
+                        .withWindLater(!scenario.windLater);
+                updateSituation();
+            }
+        });
+        windRow.addView(windLaterBtn, full());
+        windNote = text("", 13, DIM, false);
         windRow.addView(windNote);
 
         qT3 = question(col, "Table 3: container and wind speed", null);
@@ -1033,10 +1143,10 @@ public final class HazPane {
         t3Box.addView(ws);
         speedRow = horizontal();
         for (final Scenario.Wind sp : Scenario.Wind.values()) {
-            Button b = button(sp == Scenario.Wind.UNKNOWN ? "Not sure"
-                    : sp == Scenario.Wind.LOW ? "Low\n< 6 mph"
-                            : sp == Scenario.Wind.MODERATE ? "Moderate\n6-12 mph"
-                                    : "High\n> 12 mph", BTN);
+            Button b = button(sp == Scenario.Wind.UNKNOWN ? "Not sure\n(largest)"
+                    : sp == Scenario.Wind.LOW ? "Low\n< 10 km/h\n(< 6 mph)"
+                            : sp == Scenario.Wind.MODERATE ? "Moderate\n10-20 km/h\n(6-12 mph)"
+                                    : "High\n> 20 km/h\n(> 12 mph)", BTN);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -1142,7 +1252,16 @@ public final class HazPane {
             for (Button b : windButtons)
                 select(b, scenario.hasWind() && Math.abs(((scenario.windFromDeg
                         - (Integer) b.getTag()) % 360 + 540) % 360 - 180) < 0.5, BTN);
-            windNote.setText(windNote());
+            windNote.setText(windInvalid
+                    ? "Not a direction: enter 0 to 360 degrees (the direction the "
+                            + "wind blows FROM).\n" + windNote()
+                    : windNote());
+            windNote.setTextColor(windInvalid ? AMBER : DIM);
+            windLaterBtn.setVisibility(table && !scenario.hasWind() ? View.VISIBLE
+                    : View.GONE);
+            select(windLaterBtn, scenario.windLater, BTN);
+            if (scenario.windLater)
+                mark(qWind, OPTIONAL);
             updateTable3();
             mark(qT3, zones.missing.contains(Zones.Need.CONTAINER)
                     || zones.missing.contains(Zones.Need.WIND_SPEED) ? REQUIRED
@@ -1165,18 +1284,21 @@ public final class HazPane {
                 || zones.missing.contains(Zones.Need.WIND_DIRECTION)))
             sb.append("Needed to draw the protective action zone (a square "
                     + "downwind of the spill, ERG2024 p. 289).");
+        else if (table && scenario.windLater)
+            sb.append("Wind not known yet: only the isolation circle is drawn, "
+                    + "labelled PROTECTIVE ACTION ZONE NOT DRAWN. Enter the wind "
+                    + "as soon as you can (Wind or time changed… on the card).");
         else if (table)
             sb.append("Table 1 material: the protective action zone is drawn "
                     + "downwind once the other questions are answered.");
         else if (zones.downwind != null)
-            sb.append("Optional: draws the guide's large-spill downwind "
-                    + "evacuation distance as a line.");
+            sb.append("Draws the guide's large-spill downwind evacuation "
+                    + "distance as a line (not drawn without the wind).");
         else
-            sb.append("Optional. For this material the guide gives distances "
-                    + "in all directions (circles); the ERG draws a downwind "
-                    + "zone only for green-highlighted materials. If you enter "
-                    + "the wind, a blue arrow on the map shows which way is "
-                    + "downwind.");
+            sb.append("Optional. The guide gives this material's distances as "
+                    + "circles. Some guides also say to increase the distance "
+                    + "downwind as necessary; the wind shows which way that is "
+                    + "(a blue arrow on the map).");
         return sb.toString();
     }
 
@@ -1256,16 +1378,21 @@ public final class HazPane {
             return sb.toString().trim();
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("ISOLATE ").append(zones.isolation.label)
-                .append(" in all directions.");
+        sb.append(Labels.isolationAction(zones.isolation).toUpperCase(java.util.Locale.US))
+                .append(": ").append(Labels.distance(zones.isolation)).append('.');
         if (zones.paz != null)
-            sb.append("\nPROTECT persons downwind ").append(zones.paz.label)
-                    .append(" (square downwind, ").append(scenario.tod
-                            == Scenario.TimeOfDay.DAY ? "day" : "night").append(").");
+            sb.append("\nPROTECT persons downwind (evacuate and/or shelter in place): ")
+                    .append(zones.paz.label).append(" (square downwind, ")
+                    .append(scenario.tod == Scenario.TimeOfDay.DAY ? "day" : "night")
+                    .append(")").append(scenario.hasWind() ? "."
+                            : " — NOT DRAWN until the wind is entered.");
         for (Zones.Circle c : zones.rings)
-            sb.append("\n").append(c.title).append(": ").append(c.label).append('.');
+            sb.append("\n").append(c.title)
+                    .append(c.responders ? " (including responders)" : "").append(": ")
+                    .append(Labels.distance(c)).append('.');
         if (zones.downwind != null)
-            sb.append("\nLarge spill, downwind evacuation: ").append(zones.downwind.label)
+            sb.append("\nLarge spill, downwind evacuation: ")
+                    .append(Labels.distance(zones.downwind))
                     .append(scenario.hasWind() ? "." : " (enter the wind to draw it).");
         if (scenario.hasWind() && zones.paz == null && zones.downwind == null)
             sb.append("\nWind arrow (blue): from ").append(Formats.bearing(
@@ -1291,6 +1418,16 @@ public final class HazPane {
                 b.setEnabled(ok);
                 b.setAlpha(ok ? 1f : 0.4f);
             }
+        }
+        if (placeHint != null) {
+            String why = null;
+            if (!ok && zones != null && !zones.missing.isEmpty())
+                why = "To place it: " + zones.missing.get(0).prompt
+                        + (zones.missing.size() > 1 ? " (" + (zones.missing.size() - 1)
+                                + " more answer" + (zones.missing.size() > 2 ? "s" : "")
+                                + " after that)" : "");
+            placeHint.setText(why == null ? "" : why);
+            placeHint.setVisibility(why == null ? View.GONE : View.VISIBLE);
         }
         if (targetBtn != null) {
             if (placeTarget != null) {
@@ -1335,11 +1472,15 @@ public final class HazPane {
             placeTarget = null;
             selectedUid = m.getUID();
             resetNew();
+            GeoPoint me = selfPoint();
+            String from = me == null ? "" : " " + Formats.measured(distance(me, at))
+                    + " from you.";
             if (prefs.getBoolean(PREF_AUTO_SEND, false)) {
-                sharing.sendToAll(m);
-                toast("Incident placed and sent to everyone.");
+                sendAll(m);
+                toast("Incident placed and sent to everyone." + from);
             } else {
-                toast("Incident placed. Use SEND TO ALL to share it.");
+                unsent.add(m.getUID());
+                toast("Incident placed." + from + " Use SEND TO ALL to share it.");
             }
             onShow();
             scrollTop();
@@ -1480,20 +1621,29 @@ public final class HazPane {
         card.addView(text(Labels.situation(r.scenario), 12, TEXT, false));
 
         if (z != null) {
-            zoneRow(card, r.isCleared() ? DIM : RED, "Isolate all directions",
-                    z.isolation.label, z.isolation.cite);
+            zoneRow(card, r.isCleared() ? DIM : RED, Labels.isolationAction(z.isolation),
+                    Labels.distance(z.isolation), z.isolation.cite,
+                    isolationMeaning(z));
             if (z.paz != null)
                 zoneRow(card, r.isCleared() ? DIM : ORANGE,
-                        "Protect persons downwind (square)", z.paz.label, z.paz.cite);
+                        "Protect persons downwind (square)", z.paz.label
+                                + (r.scenario.hasWind() ? ""
+                                        : " — NOT DRAWN: wind direction not known yet"),
+                        z.paz.cite, ruleText("paz_people"));
             for (Zones.Circle c : z.rings)
-                zoneRow(card, r.isCleared() ? DIM : YELLOW, c.title, c.label, c.cite);
+                zoneRow(card, r.isCleared() ? DIM : YELLOW, c.title
+                        + (c.responders ? " (including responders)" : ""),
+                        Labels.distance(c), c.cite, null);
             if (z.downwind != null)
                 zoneRow(card, r.isCleared() ? DIM : ORANGE,
-                        "Large spill: downwind evacuation", z.downwind.label
-                                + (r.scenario.hasWind() ? "" : " (not drawn: no wind)"),
-                        z.downwind.cite);
+                        "Large spill: downwind evacuation", Labels.distance(z.downwind)
+                                + (r.scenario.hasWind() ? ""
+                                        : " — NOT DRAWN: wind direction not known yet"),
+                        z.downwind.cite, null);
+            if (!r.scenario.hasWind() && (z.paz != null || z.downwind != null))
+                addWindNow(card, m);
             card.addView(text("Shapes are drawn at the larger of the printed metric "
-                    + "and US values.", 11, DIM, false));
+                    + "and US values.", 12, DIM, false));
         } else {
             card.addView(text("This build doesn't have " + r.edition + ". Showing "
                     + "the distances the sender drew: isolate "
@@ -1506,6 +1656,17 @@ public final class HazPane {
                     + "ERG data. This build's distances are drawn. Check with the "
                     + "sender.", 12, RED, false));
 
+        todBanner = vertical();
+        todBanner.setBackgroundColor(0xFF3E2E00);
+        todBanner.setPadding(dp(8), dp(6), dp(8), dp(6));
+        todBanner.setVisibility(View.GONE);
+        todBannerText = text("", 13, AMBER, true);
+        todBanner.addView(todBannerText);
+        todBannerBtn = button("", 0xFF8A4B00);
+        todBanner.addView(todBannerBtn, full());
+        card.addView(todBanner, lp(6, 0));
+        sentText = text("", 13, AMBER, true);
+        card.addView(sentText);
         youText = text("", 14, TEXT, false);
         youText.setPadding(0, dp(6), 0, 0);
         card.addView(youText);
@@ -1523,8 +1684,11 @@ public final class HazPane {
             public void onClick(View v) {
                 try {
                     Marker l = live(m);
-                    if (l != null)
+                    if (l != null) {
                         toast("Sent to everyone (" + sharing.sendToAll(l) + " items).");
+                        unsent.remove(l.getUID());
+                        refresh();
+                    }
                 } catch (RuntimeException e) {
                     Log.e(TAG, "send failed", e);
                     toast("Send failed.");
@@ -1618,8 +1782,10 @@ public final class HazPane {
             }
         });
         a4.addView(clear, weight());
+        View gap = new View(plugin);
+        a4.addView(gap, new LinearLayout.LayoutParams(dp(24), 1));
         a4.addView(del, weight());
-        card.addView(a4);
+        card.addView(a4, lp(10, 0));
 
         if (z != null && !z.rules.isEmpty()) {
             card.addView(header("GUIDEBOOK RULES THAT APPLY"));
@@ -1652,8 +1818,34 @@ public final class HazPane {
                     + "with more than one leaking container (ERG2024 pp. 280-281).",
     };
 
+    /** What the isolation zone means (ERG2024 p. 288, Table 1 zones only). */
+    private String isolationMeaning(Zones z) {
+        if (z.basis == Zones.Basis.GUIDE)
+            return null;
+        String a = ruleText("iso_ppe"), b = ruleText("iso_crosswind");
+        return a == null ? b : b == null ? a : a + " " + b;
+    }
+
+    private String ruleText(String key) {
+        Erg.Rule rule = erg.rule(key);
+        return rule == null ? null : "“" + rule.text + "” (" + rule.cite(erg.edition) + ")";
+    }
+
+    /** A button to enter the wind now, for an incident drawn without it. */
+    private void addWindNow(LinearLayout card, final Marker m) {
+        Button w = button("Enter the wind direction now…", 0xFF8A4B00);
+        w.setTypeface(Typeface.DEFAULT_BOLD);
+        w.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                promptChange(m);
+            }
+        });
+        card.addView(w, full());
+    }
+
     private void zoneRow(LinearLayout card, int color, String title, String value,
-            String cite) {
+            String cite, String meaning) {
         LinearLayout line = horizontal();
         View sw = new View(plugin);
         sw.setBackgroundColor(color);
@@ -1662,9 +1854,61 @@ public final class HazPane {
         line.addView(sw, lp);
         LinearLayout tx = vertical();
         tx.addView(text(title + ": " + value, 14, TEXT, true));
-        tx.addView(text(cite, 10, DIM, false));
+        if (meaning != null)
+            tx.addView(text(meaning, 12, TEXT, false));
+        tx.addView(text(cite, 11, DIM, false));
         line.addView(tx, weight());
         card.addView(line);
+    }
+
+    /**
+     * Day/night is fixed when the incident is placed; at sunrise or sunset
+     * the Table 1/3 distances change (night ones are usually larger).
+     */
+    private void updateTodBanner(final Marker m, final HazRecord r, Zones z,
+            GeoPoint center) {
+        if (todBanner == null)
+            return;
+        Scenario.TimeOfDay now = r.scenario.tod == null || z == null
+                || !z.tableApplies || r.isCleared() || center == null ? null
+                        : Sun.timeOfDay(center.getLatitude(), center.getLongitude(),
+                                System.currentTimeMillis());
+        if (now == null || now == r.scenario.tod) {
+            todBanner.setVisibility(View.GONE);
+            return;
+        }
+        final Scenario.TimeOfDay to = now;
+        String nowWord = now == Scenario.TimeOfDay.DAY ? "DAY" : "NIGHT";
+        todBanner.setVisibility(View.VISIBLE);
+        todBannerText.setText("It is now " + nowWord + " at the incident (sun), "
+                + "but the zones use " + (now == Scenario.TimeOfDay.DAY ? "NIGHT"
+                        : "DAY") + " distances.");
+        todBannerBtn.setText("Use " + nowWord.toLowerCase(java.util.Locale.US)
+                + " distances…");
+        todBannerBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                DialogInterface.OnClickListener apply = new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        Marker l = live(m);
+                        HazRecord cur = l == null ? null : store.read(l);
+                        if (cur != null)
+                            applyChange(l, cur.scenario.withTimeOfDay(to, true),
+                                    which == DialogInterface.BUTTON_POSITIVE);
+                    }
+                };
+                new AlertDialog.Builder(mapView.getContext())
+                        .setTitle("Switch to " + (to == Scenario.TimeOfDay.DAY ? "day"
+                                : "night") + " distances?")
+                        .setMessage("DAY is any time after sunrise and before sunset; "
+                                + "NIGHT is any time between sunset and sunrise "
+                                + "(ERG2024 p. 288). The zones are recalculated.")
+                        .setPositiveButton("Update and send to all", apply)
+                        .setNeutralButton("This device only", apply)
+                        .setNegativeButton("Cancel", null).show();
+            }
+        });
     }
 
     private void updateYou(Marker m, HazRecord r) {
@@ -1678,6 +1922,12 @@ public final class HazPane {
             return;
         }
         double wind = r.scenario.windFromDeg;
+        updateTodBanner(m, r, z, center);
+        if (sentText != null) {
+            boolean notSent = unsent.contains(m.getUID());
+            sentText.setVisibility(notSent ? View.VISIBLE : View.GONE);
+            sentText.setText("NOT SENT to the team yet: press SEND TO ALL.");
+        }
         if (sp == null) {
             youText.setText("YOU: no GPS position yet.");
             youText.setTextColor(DIM);
@@ -1695,15 +1945,16 @@ public final class HazPane {
             } else {
                 String s = "YOU: " + res.headline();
                 if (res.nearEdge)
-                    s += "\nYou are near a zone edge (within the GPS error): "
-                            + "treat it as inside.";
+                    s = "YOU ARE NEAR A ZONE EDGE (within the GPS error): treat it "
+                            + "as inside.\n" + s;
                 if (r.isCleared())
                     s = "Incident marked cleared. " + s;
                 youText.setText(s);
+                // never green: "outside" is not "safe"
                 youText.setTextColor(r.isCleared() ? DIM
-                        : res.where == PositionCheck.Where.OUTSIDE ? GREEN
-                                : res.where == PositionCheck.Where.ISOLATION ? RED
-                                        : ORANGE);
+                        : res.where == PositionCheck.Where.ISOLATION ? RED
+                                : res.where != PositionCheck.Where.OUTSIDE || res.nearEdge
+                                        ? ORANGE : TEXT);
             }
         }
         if (teamText != null) {
@@ -1729,10 +1980,18 @@ public final class HazPane {
             } else {
                 int[] n = PositionCheck.count(z, center.getLatitude(),
                         center.getLongitude(), wind, pts.toArray(new double[0][]));
-                teamText.setText("Team on the map: " + n[0] + " in isolation, " + n[1]
-                        + " in protective action zone, " + n[2]
-                        + " in evacuation distance, " + n[3] + " outside.");
-                teamText.setTextColor((n[0] + n[1] + n[2]) > 0 && !r.isCleared()
+                int iso = n[PositionCheck.Where.ISOLATION.ordinal()];
+                int paz = n[PositionCheck.Where.PROTECTIVE.ordinal()];
+                int evac = n[PositionCheck.Where.EVACUATION.ordinal()]
+                        + n[PositionCheck.Where.DOWNWIND.ordinal()];
+                int maybe = n[PositionCheck.Where.POSSIBLE.ordinal()];
+                int out = n[PositionCheck.Where.OUTSIDE.ordinal()];
+                teamText.setText("Team on the map: " + iso + " in isolation, " + paz
+                        + " in protective action zone, " + evac
+                        + " in an evacuation distance"
+                        + (maybe > 0 ? ", " + maybe + " possibly downwind (no wind)" : "")
+                        + ", " + out + " outside the drawn distances.");
+                teamText.setTextColor((iso + paz + evac + maybe) > 0 && !r.isCleared()
                         ? RED : DIM);
             }
         }
@@ -1802,6 +2061,8 @@ public final class HazPane {
             sl.setMargins(0, 0, dp(6), 0);
             row.addView(sw, sl);
             String where = Double.isNaN(d) ? "" : "\n" + Formats.measured(d);
+            if (duplicate(ms, m) && !r.byCallsign.isEmpty())
+                where += "  ·  placed by " + r.byCallsign;
             TextView t = text((sel ? "▾ " : "▸ ") + ATAKUtilities.getDisplayName(m)
                     + where, 14, r.isCleared() ? DIM : TEXT, sel);
             row.addView(t, weight());
@@ -1840,6 +2101,15 @@ public final class HazPane {
             rl.setMargins(0, 0, 0, dp(3));
             incidentList.addView(row, rl);
         }
+    }
+
+    /** Another incident in the list has the same name (two "HAZ 1"s). */
+    private static boolean duplicate(List<Marker> ms, Marker m) {
+        String n = ATAKUtilities.getDisplayName(m);
+        for (Marker o : ms)
+            if (o != m && n.equals(ATAKUtilities.getDisplayName(o)))
+                return true;
+        return false;
     }
 
     private void goTo(Marker card) {
@@ -2006,7 +2276,7 @@ public final class HazPane {
             if (defaultName && !next.label.equals(cur.label))
                 store.rename(m, Names.initial(n, next.label));
             if (send)
-                sharing.sendToAll(m, cur);
+                sendAll(m);
             toast(send ? "Changes saved and sent to everyone."
                     : "Changes saved on this device. Use SEND TO ALL to share them.");
             exitEdit(m);
@@ -2052,7 +2322,8 @@ public final class HazPane {
         final CheckBox night = new CheckBox(ctx);
         night.setText("Night (unticked = day)");
         night.setChecked(r.scenario.tod == Scenario.TimeOfDay.NIGHT);
-        box.addView(night);
+        if (r.scenario.tod != null)
+            box.addView(night); // day/night only matters for Table 1/3
         final TextView hint = new TextView(ctx);
         hint.setText("The zones are recalculated from the same material, spill "
                 + "size and fire choice. Day/night: " + (r.scenario.todFromSun
@@ -2062,7 +2333,13 @@ public final class HazPane {
             @Override
             public void onClick(DialogInterface d, int which) {
                 double w = parseWind(wind.getText().toString());
-                Scenario s = r.scenario.withWindFrom(w);
+                if (Double.isNaN(w) && !wind.getText().toString().trim().isEmpty()) {
+                    toast("Not changed: enter the wind as 0 to 360 degrees.");
+                    return;
+                }
+                // the incident as it is now (someone may have changed it)
+                HazRecord cur = store.read(m);
+                Scenario s = (cur != null ? cur.scenario : r.scenario).withWindFrom(w);
                 Scenario.TimeOfDay tod = night.isChecked() ? Scenario.TimeOfDay.NIGHT
                         : Scenario.TimeOfDay.DAY;
                 if (s.tod != null && tod != s.tod)
@@ -2095,7 +2372,7 @@ public final class HazPane {
                 return;
             }
             if (send)
-                sharing.sendToAll(m, r);
+                sendAll(m);
             cardSignature = null;
             listSignature = null;
             refresh();
@@ -2116,8 +2393,11 @@ public final class HazPane {
         new AlertDialog.Builder(mapView.getContext())
                 .setTitle(clearing ? "Mark incident cleared?" : "Reopen incident?")
                 .setMessage(clearing
-                        ? "Records your callsign and the time. The zones turn grey "
-                                + "and stay on the map until deleted."
+                        ? "Use this when the incident is over and the area no longer "
+                                + "needs to be isolated. Everyone's zones turn grey and "
+                                + "stay on the map (with your callsign and the time) "
+                                + "until someone deletes them. This does not delete "
+                                + "anything."
                         : "Sets the incident back to active.")
                 .setPositiveButton(clearing ? "Clear and send to all"
                         : "Reopen and send to all", new DialogInterface.OnClickListener() {
@@ -2148,7 +2428,7 @@ public final class HazPane {
                 return;
             }
             if (send)
-                sharing.sendToAll(m);
+                sendAll(m);
             cardSignature = null;
             listSignature = null;
             refresh();
@@ -2273,7 +2553,7 @@ public final class HazPane {
                 return;
             }
             if (send)
-                sharing.sendToAll(m);
+                sendAll(m);
             cardSignature = null;
             listSignature = null;
             refresh();
@@ -2362,7 +2642,11 @@ public final class HazPane {
                 closeSub();
             }
         });
-        col.addView(back, full());
+        LinearLayout top = horizontal();
+        top.addView(back, weight());
+        Button sos = emergencyButton();
+        top.addView(sos, weight());
+        col.addView(top);
         TextView t = text(title, 16, TEXT, true);
         t.setPadding(0, dp(6), 0, dp(4));
         col.addView(t);
@@ -2536,15 +2820,22 @@ public final class HazPane {
                 + "\"In HAZ-TAK\" are the plugin's.", 11, DIM, false));
         boolean phones = page.key.equals("phone_numbers")
                 || page.key.equals("national_response_centers");
+        RefRenderer rr = new RefRenderer(plugin, mapView.getContext(),
+                new RefRenderer.Actions() {
+                    @Override
+                    public void run(String action) {
+                        referenceAction(action);
+                    }
+                }, phones);
         if (phones)
-            col.addView(text("Tap a number to open it in the phone app.", 12,
+            col.addView(text("Tap a number to open it in the phone app.", 13,
                     BLUE, false));
-        new RefRenderer(plugin, mapView.getContext(), new RefRenderer.Actions() {
-            @Override
-            public void run(String action) {
-                referenceAction(action);
-            }
-        }, phones).render(col, page);
+        if (page.key.equals("phone_numbers")) {
+            col.addView(text("In HAZ-TAK (not in the guidebook): local emergency "
+                    + "services", 13, AMBER, true));
+            col.addView(rr.callButton("911 (US, Canada, Mexico)", "911"), full());
+        }
+        rr.render(col, page);
         showSub(col);
     }
 
@@ -2610,7 +2901,7 @@ public final class HazPane {
         }
         col.addView(Ui.table(plugin, java.util.Arrays.asList("Transport container",
                 "Initial isolation", "Protect downwind: DAY", "Protect downwind: NIGHT"),
-                rows, new float[] { 1.3f, 1f, 1.25f, 1.25f }, 11), full());
+                rows, new float[] { 1.3f, 1f, 1.25f, 1.25f }, 12), full());
     }
 
     private static CharSequence winds(Map<Erg.WindSpeed, Erg.Downwind> m) {
@@ -2621,6 +2912,23 @@ public final class HazPane {
 
     // ------------------------------------------------------------------
     // Helpers
+
+    private static final int EMERGENCY_RED = 0xFFB71C1C;
+
+    /** Red "Emergency numbers" button: one tap from any screen. */
+    private Button emergencyButton() {
+        Button b = button("☎ Emergency numbers", EMERGENCY_RED);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Erg.RefPage page = erg == null ? null : erg.reference.get("phone_numbers");
+                if (page != null)
+                    showReference(page);
+            }
+        });
+        return b;
+    }
 
     private GeoPoint referencePoint() {
         GeoPoint gp = selfPoint();
@@ -2736,6 +3044,12 @@ public final class HazPane {
                 return false;
             }
         });
+    }
+
+    /** Send to everyone and note that it has been shared. */
+    private void sendAll(Marker m) {
+        sharing.sendToAll(m);
+        unsent.remove(m.getUID());
     }
 
     private void hideKeyboard(View v) {

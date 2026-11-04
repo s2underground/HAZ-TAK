@@ -13,7 +13,9 @@ public final class PositionCheck {
         ISOLATION("inside the initial isolation zone"),
         PROTECTIVE("inside the protective action zone (downwind)"),
         EVACUATION("inside an evacuation distance"),
-        OUTSIDE("outside the drawn zones");
+        DOWNWIND("inside the large-spill downwind evacuation distance"),
+        POSSIBLE("possibly inside a downwind zone: the wind isn't entered"),
+        OUTSIDE("outside the drawn distances (they are minimums for the initial phase)");
 
         public final String text;
 
@@ -59,6 +61,7 @@ public final class PositionCheck {
             return null;
         double margin = Double.isNaN(ceM) ? DEFAULT_MARGIN : Math.max(ceM, 5);
         double d = rel[0];
+        boolean wind = !Double.isNaN(windFromDeg);
         boolean near = false;
         Where w = Where.OUTSIDE;
         double iso = z.isolation.radiusM;
@@ -66,8 +69,7 @@ public final class PositionCheck {
             near = true;
         if (d <= iso) {
             w = Where.ISOLATION;
-        } else if (z.paz != null && !Double.isNaN(windFromDeg)
-                && Geometry.inSquare(rel, z.paz.downwindM)) {
+        } else if (z.paz != null && wind && Geometry.inSquare(rel, z.paz.downwindM)) {
             w = Where.PROTECTIVE;
         } else {
             for (Zones.Circle c : z.rings)
@@ -75,9 +77,23 @@ public final class PositionCheck {
                     w = Where.EVACUATION;
                     break;
                 }
+            // The guide's large-spill downwind evacuation: the ERG gives a
+            // distance, not a width; HAZ-TAK counts anyone on the downwind
+            // side within that distance (conservative).
+            if (w == Where.OUTSIDE && z.downwind != null && wind && rel[1] >= -margin
+                    && d <= z.downwind.lengthM)
+                w = Where.DOWNWIND;
+            // No wind: a downwind zone could point anywhere.
+            if (w == Where.OUTSIDE && !wind
+                    && ((z.paz != null && d <= z.paz.downwindM * FAR_CORNER)
+                            || (z.downwind != null && d <= z.downwind.lengthM)))
+                w = Where.POSSIBLE;
         }
-        if (z.paz != null && !Double.isNaN(windFromDeg)
+        if (z.paz != null && wind
                 && Math.abs(Geometry.squareEdgeDistance(rel, z.paz.downwindM)) <= margin)
+            near = true;
+        if (z.downwind != null && wind && rel[1] >= -margin
+                && Math.abs(d - z.downwind.lengthM) <= margin)
             near = true;
         for (Zones.Circle c : z.rings)
             if (Math.abs(d - c.radiusM) <= margin)
@@ -85,10 +101,18 @@ public final class PositionCheck {
         return new Result(w, d, rel[1], near);
     }
 
-    /** Counts {isolation, protective, evacuation, outside} for team positions. */
+    /** Distance from the spill to the square's far corners, per unit side. */
+    static final double FAR_CORNER = Math.hypot(1.0, 0.5);
+
+    /** True if this result means "inside something" (never shown as safe). */
+    public static boolean inside(Where w) {
+        return w != Where.OUTSIDE;
+    }
+
+    /** Counts per {@link Where} (indexed by ordinal) for team positions. */
     public static int[] count(Zones z, double spillLat, double spillLon,
             double windFromDeg, double[][] positions) {
-        int[] n = new int[4];
+        int[] n = new int[Where.values().length];
         for (double[] p : positions) {
             Result r = check(z, spillLat, spillLon, windFromDeg, p[0], p[1],
                     Double.NaN);

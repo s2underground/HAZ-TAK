@@ -48,11 +48,12 @@ public final class Formats {
         if (Double.isNaN(metres))
             return "?";
         double feet = metres / Units.M_PER_FT;
+        // metres first, like the guidebook ("60 m (200 ft)")
         if (feet >= MILES_ABOVE_FT)
-            return decimal(metres / Units.M_PER_MI) + " mi ("
-                    + decimal(metres / 1000.0) + " km)";
-        return thousands(Math.round(feet)) + " ft ("
-                + thousands(Math.round(metres)) + " m)";
+            return decimal(metres / 1000.0) + " km ("
+                    + decimal(metres / Units.M_PER_MI) + " mi)";
+        return thousands(Math.round(metres)) + " m ("
+                + thousands(Math.round(feet)) + " ft)";
     }
 
     /** One decimal below 100, whole numbers with separators above. */

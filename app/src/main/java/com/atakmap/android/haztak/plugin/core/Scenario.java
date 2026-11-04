@@ -52,12 +52,25 @@ public final class Scenario {
     public final Water water;        // null = not chosen
     public final String container;   // Table 3 container label, CONTAINER_UNKNOWN, or null
     public final Wind windSpeed;     // null = not chosen
-    public final boolean doubled;    // catastrophic/instantaneous release: distances x2
+    public final boolean doubled;
+    /**
+     * The user said the wind direction isn't known yet: the isolation circle
+     * can be drawn now, the downwind zones only once the wind is entered.
+     */
+    public final boolean windLater;    // catastrophic/instantaneous release: distances x2
 
     public Scenario(String id, String name, String guide, String placardKey,
             Spill spill, Boolean fire, TimeOfDay tod, boolean todFromSun,
             double windFromDeg, Water water, String container, Wind windSpeed,
             boolean doubled) {
+        this(id, name, guide, placardKey, spill, fire, tod, todFromSun,
+                windFromDeg, water, container, windSpeed, doubled, false);
+    }
+
+    public Scenario(String id, String name, String guide, String placardKey,
+            Spill spill, Boolean fire, TimeOfDay tod, boolean todFromSun,
+            double windFromDeg, Water water, String container, Wind windSpeed,
+            boolean doubled, boolean windLater) {
         this.id = id == null ? "" : id;
         this.name = name;
         this.guide = guide;
@@ -71,6 +84,8 @@ public final class Scenario {
         this.container = container;
         this.windSpeed = windSpeed;
         this.doubled = doubled;
+        // "wind not known yet" only means something while there is no wind
+        this.windLater = windLater && Double.isNaN(windFromDeg);
     }
 
     public static Scenario empty() {
@@ -82,21 +97,21 @@ public final class Scenario {
     public Scenario material(Erg.Entry e) {
         if (e.id.isEmpty()) // explosives rows: guide by division, no ID
             return new Scenario("", e.name, e.guideNumber(), null, spill, fire,
-                    tod, todFromSun, windFromDeg, null, null, null, doubled);
+                    tod, todFromSun, windFromDeg, null, null, null, doubled, windLater);
         return new Scenario(e.id, e.name, null, null, spill, fire, tod,
-                todFromSun, windFromDeg, null, null, null, doubled);
+                todFromSun, windFromDeg, null, null, null, doubled, windLater);
     }
 
     /** Identified by ID number only (shipping name not known). */
     public Scenario idOnly(String id) {
         return new Scenario(id, null, null, null, spill, fire, tod,
-                todFromSun, windFromDeg, null, null, null, doubled);
+                todFromSun, windFromDeg, null, null, null, doubled, windLater);
     }
 
     /** Identified by guide only (placard or unknown cargo). */
     public Scenario guideOnly(String guide, String placardKey) {
         return new Scenario("", null, guide, placardKey, spill, fire, tod,
-                todFromSun, windFromDeg, null, null, null, doubled);
+                todFromSun, windFromDeg, null, null, null, doubled, windLater);
     }
 
     /**
@@ -105,48 +120,54 @@ public final class Scenario {
      */
     public Scenario unidentified() {
         return new Scenario("", null, null, null, spill, fire, tod, todFromSun,
-                windFromDeg, null, null, null, doubled);
+                windFromDeg, null, null, null, doubled, windLater);
     }
 
     public Scenario withSpill(Spill s) {
         return new Scenario(id, name, guide, placardKey, s, fire, tod,
-                todFromSun, windFromDeg, water, container, windSpeed, doubled);
+                todFromSun, windFromDeg, water, container, windSpeed, doubled, windLater);
     }
 
     public Scenario withFire(Boolean f) {
         return new Scenario(id, name, guide, placardKey, spill, f, tod,
-                todFromSun, windFromDeg, water, container, windSpeed, doubled);
+                todFromSun, windFromDeg, water, container, windSpeed, doubled, windLater);
     }
 
     public Scenario withTimeOfDay(TimeOfDay t, boolean fromSun) {
         return new Scenario(id, name, guide, placardKey, spill, fire, t,
-                fromSun, windFromDeg, water, container, windSpeed, doubled);
+                fromSun, windFromDeg, water, container, windSpeed, doubled, windLater);
     }
 
     public Scenario withWindFrom(double deg) {
         double d = Double.isNaN(deg) ? deg : Formats.norm360(deg);
         return new Scenario(id, name, guide, placardKey, spill, fire, tod,
-                todFromSun, d, water, container, windSpeed, doubled);
+                todFromSun, d, water, container, windSpeed, doubled, windLater);
     }
 
     public Scenario withWater(Water w) {
         return new Scenario(id, name, guide, placardKey, spill, fire, tod,
-                todFromSun, windFromDeg, w, container, windSpeed, doubled);
+                todFromSun, windFromDeg, w, container, windSpeed, doubled, windLater);
     }
 
     public Scenario withContainer(String c) {
         return new Scenario(id, name, guide, placardKey, spill, fire, tod,
-                todFromSun, windFromDeg, water, c, windSpeed, doubled);
+                todFromSun, windFromDeg, water, c, windSpeed, doubled, windLater);
     }
 
     public Scenario withWindSpeed(Wind w) {
         return new Scenario(id, name, guide, placardKey, spill, fire, tod,
-                todFromSun, windFromDeg, water, container, w, doubled);
+                todFromSun, windFromDeg, water, container, w, doubled, windLater);
+    }
+
+    public Scenario withWindLater(boolean later) {
+        return new Scenario(id, name, guide, placardKey, spill, fire, tod,
+                todFromSun, windFromDeg, water, container, windSpeed, doubled,
+                later);
     }
 
     public Scenario withDoubled(boolean x2) {
         return new Scenario(id, name, guide, placardKey, spill, fire, tod,
-                todFromSun, windFromDeg, water, container, windSpeed, x2);
+                todFromSun, windFromDeg, water, container, windSpeed, x2, windLater);
     }
 
     /** Situation choices cleared, identification kept (for a new incident). */

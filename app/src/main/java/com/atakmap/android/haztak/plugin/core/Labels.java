@@ -67,11 +67,31 @@ public final class Labels {
     }
 
     public static String isolationTitle(HazRecord r, Zones.Circle c) {
-        return prefix(r) + "ISOLATE " + c.label + " ALL DIRECTIONS";
+        return prefix(r) + "ISOLATE " + (c.evacuate ? "AND EVACUATE " : "")
+                + (c.atLeast ? "AT LEAST " : "") + c.label + " ALL DIRECTIONS"
+                + (c.responders ? " (INCLUDING RESPONDERS)" : "");
     }
 
     public static String ringTitle(HazRecord r, Zones.Circle c) {
-        return prefix(r) + c.title.toUpperCase(java.util.Locale.US) + " " + c.label;
+        return prefix(r) + c.title.toUpperCase(java.util.Locale.US) + " "
+                + (c.atLeast ? "AT LEAST " : "") + c.label
+                + (c.responders ? " (INCLUDING RESPONDERS)" : "");
+    }
+
+    /** "at least 100 meters (330 feet)" or "60 m (200 ft)", as the source says. */
+    public static String distance(Zones.Circle c) {
+        return (c.atLeast ? "at least " : "") + c.label;
+    }
+
+    public static String distance(Zones.Line l) {
+        return (l.atLeast ? "at least " : "") + l.label;
+    }
+
+    /** What the isolation circle means, in a few words. */
+    public static String isolationAction(Zones.Circle c) {
+        return c.evacuate ? "Isolate and evacuate all directions"
+                + (c.responders ? " (including responders)" : "")
+                : "Isolate all directions";
     }
 
     public static String squareTitle(HazRecord r, Zones.Square q) {
@@ -81,7 +101,8 @@ public final class Labels {
     }
 
     public static String lineTitle(HazRecord r, Zones.Line l) {
-        return prefix(r) + "LARGE SPILL: DOWNWIND EVACUATION " + l.label;
+        return prefix(r) + "LARGE SPILL: DOWNWIND EVACUATION "
+                + (l.atLeast ? "AT LEAST " : "") + l.label;
     }
 
     public static String windTitle(HazRecord r) {
@@ -125,16 +146,21 @@ public final class Labels {
             sb.append(", ").append(guideLine(z));
         sb.append(". ").append(situation(r.scenario)).append(". ");
         if (z != null) {
-            sb.append("Isolate ").append(z.isolation.label)
-                    .append(" in all directions");
+            sb.append(isolationAction(z.isolation)).append(' ')
+                    .append(distance(z.isolation));
             if (z.paz != null)
-                sb.append("; protect persons downwind ").append(z.paz.label);
+                sb.append("; protect persons downwind ").append(z.paz.label)
+                        .append(r.scenario.hasWind() ? ""
+                                : " (NOT DRAWN: wind direction not known yet)");
             for (Zones.Circle c : z.rings)
                 sb.append("; ").append(c.title.toLowerCase(java.util.Locale.US))
-                        .append(' ').append(c.label);
+                        .append(' ').append(distance(c))
+                        .append(c.responders ? ", including responders" : "");
             if (z.downwind != null)
                 sb.append("; large spill downwind evacuation ")
-                        .append(z.downwind.label);
+                        .append(distance(z.downwind))
+                        .append(r.scenario.hasWind() ? ""
+                                : " (NOT DRAWN: wind direction not known yet)");
             sb.append(" (").append(z.paz != null ? z.paz.cite : z.isolation.cite)
                     .append("). ");
         } else {

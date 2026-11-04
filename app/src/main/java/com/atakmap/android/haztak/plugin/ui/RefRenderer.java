@@ -304,6 +304,23 @@ final class RefRenderer {
     // ------------------------------------------------------------------
     // Tables and telephone numbers
 
+    Button callButton(String printed, final String dial) {
+        Button btn = new Button(c);
+        btn.setText("☎ Call " + printed);
+        btn.setAllCaps(false);
+        btn.setTextColor(Color.WHITE);
+        btn.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16);
+        btn.setMinHeight(dp(48));
+        btn.setBackground(Ui.box(c, 0xFF1B5E20, 0xFF000000, 1, false));
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Ui.dial(activity, dial);
+            }
+        });
+        return btn;
+    }
+
     private void table(LinearLayout col, Erg.RefBlock b) {
         List<List<CharSequence>> rows = new ArrayList<>();
         for (List<String> r : b.rows) {
@@ -324,11 +341,15 @@ final class RefRenderer {
         card.addView(Ui.text(c, Ui.html(b.name), 13, Ui.TEXT, true));
         for (String line : b.lines) {
             boolean number = Ui.hasPhone(line);
-            TextView t = Ui.text(c, Ui.dialable(activity, line), number ? 15 : 12,
+            TextView t = Ui.text(c, line, number ? 14 : 12,
                     number ? Ui.TEXT : Ui.DIM, number);
-            t.setMovementMethod(LinkMovementMethod.getInstance());
-            t.setPadding(0, dp(number ? 3 : 0), 0, 0);
+            t.setPadding(0, dp(number ? 4 : 0), 0, 0);
             card.addView(t);
+            // a big button per number: easy to hit with gloves
+            for (final com.atakmap.android.haztak.plugin.core.Phones.Found f
+                    : com.atakmap.android.haztak.plugin.core.Phones.find(line))
+                card.addView(callButton(line.substring(f.start, f.end), f.dial),
+                        Ui.full(dp(2), dp(2)));
         }
         col.addView(card, Ui.full(dp(4), dp(4)));
     }

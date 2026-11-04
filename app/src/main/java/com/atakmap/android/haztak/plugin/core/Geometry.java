@@ -55,7 +55,7 @@ public final class Geometry {
             return null;
         double along = Double.NaN, cross = Double.NaN;
         if (!Double.isNaN(windFromDeg)) {
-            double b = Geo.bearing(spillLat, spillLon, lat, lon);
+            double b = Geo.azimuth(spillLat, spillLon, lat, lon);
             double delta = Math.toRadians(b - downwindAzimuth(windFromDeg));
             along = d * Math.cos(delta);
             cross = d * Math.sin(delta);

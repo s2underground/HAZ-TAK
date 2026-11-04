@@ -268,12 +268,21 @@ public final class HazStore {
         return Math.max(stored, Names.numberIn(nameOf(m)));
     }
 
+    /**
+     * Next "HAZ n". Numbers of 1000 and above are ignored, so a marker renamed
+     * e.g. "HAZ 2024 fuel spill" doesn't push everyone's numbering up.
+     */
     public int nextNumber() {
         int max = 0;
-        for (Marker m : all())
-            max = Math.max(max, numberOf(m));
+        for (Marker m : all()) {
+            int n = numberOf(m);
+            if (n < NUMBER_CEILING)
+                max = Math.max(max, n);
+        }
         return max + 1;
     }
+
+    static final int NUMBER_CEILING = 1000;
 
     // ------------------------------------------------------------------
     // Writing
@@ -366,8 +375,10 @@ public final class HazStore {
         }
         for (String sfx : Drawing.allSuffixes())
             if (!wanted.contains(sfx)) {
+                // by UID: also shapes received from the network (e.g. a TAK
+                // server replaying an old square) that HAZ-TAK never touched
                 MapItem old = liveItem(m.getUID() + sfx);
-                if (old != null && isShape(old))
+                if (old instanceof DrawingCircle || old instanceof DrawingShape)
                     removeOnPurpose(old);
             }
     }
@@ -548,7 +559,8 @@ public final class HazStore {
     }
 
     // ------------------------------------------------------------------
-    // Deleting any part removes the whole incident; moving the marker
+    // Deleting the marker removes the whole incident; a removed shape is
+    // redrawn if the incident still needs it; moving the marker
     // redraws the square and the line. "Removed" can fire on group moves,
     // so the item must still be missing after a short wait.
 
@@ -625,20 +637,23 @@ public final class HazStore {
                         deleteIncident(incident); // the marker itself
                         return;
                     }
+                    // A shape alone never deletes the incident: a lost marker
+                    // update on a mesh could otherwise wipe it from this map.
+                    // If this device's record still draws the shape, draw it
+                    // again (after a wait, in case the update that drops it
+                    // is still on its way).
                     if (!stillWanted(incident, uid))
-                        return; // another device's edit removed it: not a delete
-                    // Still drawn by this device's copy of the record. Wait
-                    // longer in case the edited marker that drops this shape
-                    // is still on its way, then decide.
+                        return;
                     main.postDelayed(new Runnable() {
                         @Override
                         public void run() {
                             try {
-                                if (liveItem(uid) == null && !expectedRemovals.contains(uid)
+                                Marker m = liveMarker(incident);
+                                if (m != null && liveItem(uid) == null
                                         && stillWanted(incident, uid))
-                                    deleteIncident(incident);
+                                    ensureShapes(m, read(m));
                             } catch (RuntimeException e) {
-                                Log.e(TAG, "incident cleanup failed for " + uid, e);
+                                Log.e(TAG, "shape redraw failed for " + uid, e);
                             }
                         }
                     }, SHAPE_GRACE_MS);

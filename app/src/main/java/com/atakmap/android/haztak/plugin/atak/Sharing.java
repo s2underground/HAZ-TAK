@@ -21,7 +21,6 @@ import com.atakmap.coremap.maps.time.CoordinatedTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Sending incidents. The marker always goes first so receivers can anchor
@@ -43,22 +42,10 @@ public final class Sharing {
 
     /**
      * Broadcast the incident to everyone: commo sends a broadcast to every
-     * output (mesh and all TAK server connections).
+     * output (mesh and all TAK server connections). The marker goes first,
+     * then its shapes, then forced deletes for the shapes it doesn't draw.
      */
     public int sendToAll(Marker m) {
-        return sendToAll(m, null);
-    }
-
-    /**
-     * Broadcast the incident; {@code previous} is its record before a change
-     * made on this device (null if none). Shapes the old version drew that
-     * the current one doesn't (e.g. an edit removed the square) are removed
-     * everywhere with forced deletes, so clients without HAZ-TAK don't keep a
-     * stale zone. Which shapes are stale is worked out from the records,
-     * never from what happened to be sent, so a shape the incident still
-     * needs is never deleted. The deletes go last, after the updated marker.
-     */
-    public int sendToAll(Marker m, HazRecord previous) {
         CotDispatcher d = CotMapComponent.getExternalDispatcher();
         int n = 0;
         for (MapItem mi : store.items(m)) {
@@ -70,25 +57,25 @@ public final class Sharing {
             d.dispatchToBroadcast(ev);
             n++;
         }
-        HazRecord current = store.read(m);
-        Map<String, String> now = shapesOf(m, current);
+        // Every shape the incident does NOT draw now is removed everywhere
+        // (cheap, idempotent): clients without HAZ-TAK, and clients that
+        // missed an earlier update or got an old square replayed by a TAK
+        // server, drop stale zones. HAZ-TAK receivers never delete an
+        // incident because of a removed shape (HazStore.partRemoved).
+        Map<String, String> now = shapesOf(m, store.read(m));
         if (now == null)
             return n; // can't tell what the incident draws: delete nothing
-        Map<String, String> stale = new HashMap<>();
-        Map<String, String> before = broadcast.get(m.getUID());
-        if (before != null)
-            stale.putAll(before);
-        Map<String, String> prev = shapesOf(m, previous);
-        if (prev != null)
-            stale.putAll(prev);
-        broadcast.put(m.getUID(), now);
-        for (Map.Entry<String, String> e : stale.entrySet())
-            if (!now.containsKey(e.getKey()))
-                try {
-                    d.dispatchToBroadcast(deleteEvent(e.getKey(), e.getValue()));
-                } catch (RuntimeException ex) {
-                    Log.e(TAG, "stale shape delete failed for " + e.getKey(), ex);
-                }
+        for (String sfx : Drawing.allSuffixes()) {
+            String uid = m.getUID() + sfx;
+            if (now.containsKey(uid))
+                continue;
+            try {
+                d.dispatchToBroadcast(deleteEvent(uid, sfx.equals(Drawing.ISO)
+                        || sfx.startsWith(Drawing.EV) ? CIRCLE_TYPE : SHAPE_TYPE));
+            } catch (RuntimeException ex) {
+                Log.e(TAG, "stale shape delete failed for " + uid, ex);
+            }
+        }
         return n;
     }
 
@@ -108,8 +95,6 @@ public final class Sharing {
     static final String CIRCLE_TYPE = "u-d-c-c";
     static final String SHAPE_TYPE = "u-d-f";
 
-    /** What each incident's record drew when last broadcast this session. */
-    private final Map<String, Map<String, String>> broadcast = new ConcurrentHashMap<>();
 
     /** Open ATAK's contact picker with the marker and its shapes. */
     public void sendTo(Marker m) {
@@ -135,7 +120,6 @@ public final class Sharing {
                 Log.e(TAG, "delete event failed for " + mi.getUID(), e);
             }
         }
-        broadcast.remove(m.getUID());
         store.delete(m);
     }
 

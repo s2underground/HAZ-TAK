@@ -119,9 +119,18 @@ public final class Erg {
         public final String dir;     // all, downwind, unspecified
         public final String action;  // isolate, evacuate, other
         public final String text;    // the whole sentence, verbatim
+        /** "EVACUATION" or "EMERGENCY RESPONSE" (the guide's second page). */
+        public final String section;
 
         GuideDistance(String sub, int metres, String other, String dir,
                 String action, String text) {
+            this(sub, metres, other, dir, action, text, "EVACUATION");
+        }
+
+        GuideDistance(String sub, int metres, String other, String dir,
+                String action, String text, String section) {
+            this.section = section == null || section.isEmpty() ? "EVACUATION"
+                    : section;
             this.sub = sub == null ? "" : sub;
             this.metres = metres;
             this.other = other;
@@ -142,6 +151,21 @@ public final class Erg {
 
         public boolean allDirections() {
             return "all".equals(dir);
+        }
+
+        /** The guide says "at least" this distance. */
+        public boolean atLeast() {
+            return text != null && text.contains("at least " + metres + " meters");
+        }
+
+        /** The guide includes emergency responders in this evacuation. */
+        public boolean responders() {
+            return text != null && text.contains("including emergency responders");
+        }
+
+        /** "Stop all traffic and clear the area ..." (fire reaches cargo). */
+        public boolean clearArea() {
+            return text != null && text.contains("clear the area");
         }
 
         public boolean downwind() {
@@ -544,7 +568,8 @@ public final class Erg {
                     ds.add(new GuideDistance(x.isNull("sub") ? ""
                             : x.getString("sub"), x.getInt("m"),
                             x.getString("other"), x.getString("dir"),
-                            x.getString("action"), x.getString("text")));
+                            x.getString("action"), x.getString("text"),
+                            x.optString("sec", "EVACUATION")));
                 }
             gs.put(g.getString("guide"), new Guide(g.getString("guide"),
                     g.getString("title"), g.getInt("page"),

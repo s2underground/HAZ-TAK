@@ -60,6 +60,10 @@ tables, wind always enterable with a wind arrow for circle-only zones.
 0.4 (Nov 2026): edit an incident (material and situation, with an edit
 trail and a conflict check), tap again to collapse the card, keyboard
 always shows Done.
+0.5 (Nov 2026): pre-release audit fixes (see docs/AUDIT-0.5.md): Guide 113
+cargo-fire distance, downwind evacuation in the position check, wind
+not known yet, day/night banner, emergency numbers on every screen,
+safer sharing (a lost packet can't delete an incident), and more.
 Planned: 1.1 camera placard reader (photo -> 4-digit ID with Tesseract,
 offline, always confirmed by the user); later rail car / road trailer
 identification, the chemical warfare agent section, Spanish/French text.
